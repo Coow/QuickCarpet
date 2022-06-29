@@ -6,6 +6,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.logging.LogUtils;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.entity.SpawnGroup;
@@ -16,29 +17,27 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Pair;
 import net.minecraft.world.level.ServerWorldProperties;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.slf4j.Logger;
 import quickcarpet.api.QuickCarpetAPI;
 import quickcarpet.api.ServerEventListener;
 import quickcarpet.api.TelemetryProvider;
 import quickcarpet.api.module.QuickCarpetModule;
+import quickcarpet.api.settings.CoreSettingsManager;
+import quickcarpet.api.settings.ParsedRule;
 import quickcarpet.commands.*;
-import quickcarpet.helper.Mobcaps;
 import quickcarpet.pubsub.PubSubManager;
 import quickcarpet.pubsub.PubSubNode;
 import quickcarpet.settings.Settings;
 import quickcarpet.utils.*;
-import quickcarpet.utils.extensions.WaypointContainer;
+import quickcarpet.utils.mixin.MixinConfig;
+import quickcarpet.utils.mixin.extensions.WaypointContainer;
 
 import java.io.IOException;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 
 public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, TelemetryProvider {
     public static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-    public static final Logger LOG = LogManager.getLogger();
+    public static final Logger LOGGER = LogUtils.getLogger();
     public static final PubSubManager PUBSUB = new PubSubManager();
 
     private static QuickCarpet instance = new QuickCarpet();
@@ -46,7 +45,6 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
     public final Set<QuickCarpetModule> modules = new TreeSet<>();
     private QuickCarpetServer server;
     private CommandDispatcher<ServerCommandSource> dispatcher;
-    @SuppressWarnings("UnstableApiUsage")
     private final Multimap<ServerWorld, Runnable> worldUnloadCallbacks = MultimapBuilder.hashKeys().arrayListValues().build();
 
     // Fabric on dedicated server will call getInstance at return of DedicatedServer::<init>(...)
@@ -54,10 +52,18 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
     // Client will call getInstance at head of MinecraftClient::init()
     private QuickCarpet() {
         instance = this;
+        for (var container : FabricLoader.getInstance().getEntrypointContainers("quickcarpet", QuickCarpetModule.class)) {
+            registerModule(container.getEntrypoint());
+        }
     }
 
     public static QuickCarpet getInstance() {
         return instance;
+    }
+
+    public void onBootstrapInitialize() {
+        CarpetRegistry.init();
+        QuickCarpetRegistries.init();
     }
 
     @Override
@@ -81,7 +87,7 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
             try {
                 m.tick(server);
             } catch (RuntimeException e) {
-                LOG.error("Exception ticking " + Build.NAME + " module " + m.getName(), e);
+                LOGGER.error("Exception ticking " + Build.NAME + " module " + m.getName(), e);
             }
         }
     }
@@ -89,7 +95,6 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
     @Override
     public void onGameStarted(EnvType env) {
         QuickCarpetAPI.getInstance();
-        CarpetRegistry.init();
         CarpetProfiler.init();
         try {
             Translations.init();
@@ -99,7 +104,7 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
         Settings.MANAGER.parse();
         for (QuickCarpetModule m : modules) {
             m.onGameStarted();
-            LOG.info(Build.NAME + " module " + m.getId() + " version " + m.getVersion() + " initialized");
+            LOGGER.info(Build.NAME + " module " + m.getId() + " version " + m.getVersion() + " initialized");
         }
     }
 
@@ -134,7 +139,7 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
 
     @Override
     public void registerModule(QuickCarpetModule module) {
-        LOG.info(Build.NAME + " module " + module.getId() + " version " + module.getVersion() + " registered");
+        LOGGER.info(Build.NAME + " module " + module.getId() + " version " + module.getVersion() + " registered");
         modules.add(module);
         try {
             Translations.loadModuleTranslations(module);
@@ -144,13 +149,23 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
     }
 
     @Override
+    public Set<QuickCarpetModule> getModules() {
+        return Collections.unmodifiableSet(modules);
+    }
+
+    @Override
+    public CoreSettingsManager getSettingsManager() {
+        return Settings.MANAGER;
+    }
+
+    @Override
     public void onPlayerConnect(ServerPlayerEntity player) {
         server.onPlayerConnect(player);
         for (QuickCarpetModule m : modules) {
             try {
                 m.onPlayerConnect(player);
             } catch (RuntimeException e) {
-                LOG.error("Exception during onPlayerConnect for " + player.getEntityName() + " in module " + m.getName(), e);
+                LOGGER.error("Exception during onPlayerConnect for " + player.getEntityName() + " in module " + m.getName(), e);
             }
         }
     }
@@ -162,7 +177,7 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
             try {
                 m.onPlayerDisconnect(player);
             } catch (RuntimeException e) {
-                LOG.error("Exception during onPlayerDisconnect for " + player.getEntityName() + " in module " + m.getName(), e);
+                LOGGER.error("Exception during onPlayerDisconnect for " + player.getEntityName() + " in module " + m.getName(), e);
             }
         }
     }
@@ -192,11 +207,11 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
         });
         worldUnloadCallbacks.put(world, handle::remove);
         try {
-            Map<String, Waypoint> waypoints = ((WaypointContainer) world).getWaypoints();
+            Map<String, Waypoint> waypoints = ((WaypointContainer) world).quickcarpet$getWaypoints();
             waypoints.clear();
             waypoints.putAll(Waypoint.loadWaypoints((WaypointContainer) world));
         } catch (Exception e) {
-            LOG.error("Error loading waypoints for {}/{}", ((ServerWorldProperties) world.getLevelProperties()).getLevelName(), world.getRegistryKey().getValue(), e);
+            LOGGER.error("Error loading waypoints for {}/{}", ((ServerWorldProperties) world.getLevelProperties()).getLevelName(), world.getRegistryKey().getValue(), e);
         }
     }
 
@@ -212,7 +227,7 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
         try {
             Waypoint.saveWaypoints((WaypointContainer) world);
         } catch (Exception e) {
-            LOG.error("Error saving waypoints for {}/{}", ((ServerWorldProperties) world.getLevelProperties()).getLevelName(), world.getRegistryKey().getValue(), e);
+            LOGGER.error("Error saving waypoints for {}/{}", ((ServerWorldProperties) world.getLevelProperties()).getLevelName(), world.getRegistryKey().getValue(), e);
         }
     }
 
@@ -220,7 +235,6 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
     public void onWorldsUnloaded(MinecraftServer server) {
         for (ServerWorld world : server.getWorlds()) onWorldUnloaded(world);
         for (QuickCarpetModule m : modules) m.onWorldsUnloaded(server);
-        StatHelper.clearCache();
         this.server = null;
         QuickCarpetServer.shutdown();
     }
@@ -238,10 +252,21 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
         return false;
     }
 
+    @Override
+    public boolean isRuleEnabled(ParsedRule<?> rule) {
+        return MixinConfig.getInstance().isRuleEnabled(rule);
+    }
+
+    @Override
+    public List<String> getEnabledOptions(ParsedRule<?> rule, List<String> options) {
+        return options.stream()
+            .filter(option -> MixinConfig.getInstance().isOptionEnabled(rule, option))
+            .toList();
+    }
+
     public static boolean isDevelopment() {
         try {
-            //noinspection ConstantConditions
-            return Build.VERSION.contains("dev") || FabricLoader.getInstance().isDevelopmentEnvironment();
+            return Build.VERSION_IS_DEV || FabricLoader.getInstance().isDevelopmentEnvironment();
         } catch (NullPointerException e) {
             return true;
         }
@@ -254,6 +279,13 @@ public final class QuickCarpet implements QuickCarpetAPI, ServerEventListener, T
 
     @Override
     public String getVersion() {
+        return Build.VERSION;
+    }
+
+    public static String getFullVersionString() {
+        if (Build.VERSION_IS_DEV || isDevelopment()) {
+            return Build.VERSION +  " " + Build.BRANCH + "-" + Build.COMMIT_SHORT + " (" + Build.BUILD_TIMESTAMP + ")";
+        }
         return Build.VERSION;
     }
 

@@ -6,6 +6,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.mojang.logging.LogUtils;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.JsonOps;
@@ -14,10 +15,12 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.JsonHelper;
 import net.minecraft.util.WorldSavePath;
-import org.apache.logging.log4j.LogManager;
 import quickcarpet.QuickCarpetServer;
+import quickcarpet.logging.source.LoggerSource;
+import quickcarpet.utils.QuickCarpetRegistries;
 
 import javax.annotation.Nullable;
 import java.io.BufferedWriter;
@@ -30,14 +33,25 @@ import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 public class LoggerManager {
-    private static final org.apache.logging.log4j.Logger LOGGER = LogManager.getLogger();
+    private static final org.slf4j.Logger LOGGER = LogUtils.getLogger();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private final MinecraftServer server;
     private final Map<String, PlayerSubscriptions> playerSubscriptions = new HashMap<>();
     private final Multimap<Logger, String> subscribedOnlinePlayers = MultimapBuilder.hashKeys().hashSetValues().build();
+    private final Map<Logger, LoggerSource> sources = new LinkedHashMap<>();
 
     public LoggerManager(MinecraftServer server) {
         this.server = server;
+        for (Logger logger : QuickCarpetRegistries.LOGGER) {
+            LoggerSource source = logger.createSource();
+            if (source != null) {
+                sources.put(logger, source);
+            }
+        }
+    }
+
+    LoggerSource getSource(Logger logger) {
+        return sources.get(logger);
     }
 
     public record LoggerOptions(Logger logger, String option, @Nullable LogHandler handler) {
@@ -92,7 +106,7 @@ public class LoggerManager {
     /**
      * Subscribes the player with name playerName to the log with name logName.
      */
-    public void subscribePlayer(String playerName, String logName, String option, LogHandler handler) {
+    public void subscribePlayer(String playerName, Identifier logName, String option, LogHandler handler) {
         subscribePlayer(playerName, Loggers.getLogger(logName), option, handler);
     }
 
@@ -114,7 +128,7 @@ public class LoggerManager {
     /**
      * Unsubscribes the player with name playerName from the log with name logName.
      */
-    public void unsubscribePlayer(String playerName, String logName) {
+    public void unsubscribePlayer(String playerName, Identifier logName) {
         unsubscribePlayer(playerName, Loggers.getLogger(logName));
     }
 
@@ -131,7 +145,7 @@ public class LoggerManager {
     /**
      * If the player is not subscribed to the log, then subscribe them. Otherwise, unsubscribe them.
      */
-    public boolean togglePlayerSubscription(String playerName, String logName, LogHandler handler) {
+    public boolean togglePlayerSubscription(String playerName, Identifier logName, LogHandler handler) {
         PlayerSubscriptions subs = playerSubscriptions.get(playerName);
         Logger logger = Loggers.getLogger(logName);
         if (subs != null && subs.isSubscribedTo(logger)) {
@@ -254,5 +268,17 @@ public class LoggerManager {
         playerSubscriptions.clear();
         subscribedOnlinePlayers.clear();
         for (Logger logger : Loggers.values()) logger.active = false;
+    }
+
+    public void update() {
+        for (var e : sources.entrySet()) {
+            e.getValue().tick();
+        }
+        if (server.getTicks() % 20 == 0) {
+            for (var e : sources.entrySet()) {
+                e.getValue().pull(e.getKey());
+            }
+            HUDController.update();
+        }
     }
 }

@@ -8,7 +8,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.registry.RegistryKey;
 import quickcarpet.api.module.QuickCarpetModule;
 import quickcarpet.mixin.accessor.RegistryKeyAccessor;
-import quickcarpet.utils.extensions.PlayerWithLanguage;
+import quickcarpet.utils.mixin.extensions.PlayerWithLanguage;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -64,20 +64,20 @@ public class Translations {
         TRANSLATIONS.put(locale, translations);
     }
 
-    public static MutableText translate(MutableText text, ServerPlayerEntity player) {
-        return translate(text, ((PlayerWithLanguage) player).getLanguage());
+    public static MutableText translate(Text text, ServerPlayerEntity player) {
+        return translate(text, ((PlayerWithLanguage) player).quickcarpet$getLanguage());
     }
 
-    public static MutableText translate(MutableText text, String locale) {
+    public static MutableText translate(Text text, String locale) {
         MutableText translated = translatedCopy(text, locale);
         Style style = text.getStyle();
         HoverEvent hover = style.getHoverEvent();
         if (hover != null && hover.getAction() == HoverEvent.Action.SHOW_TEXT) {
-            style.withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, translate((MutableText) hover.getValue(HoverEvent.Action.SHOW_TEXT), locale)));
+            style.withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, translate(hover.getValue(HoverEvent.Action.SHOW_TEXT), locale)));
         }
         translated.setStyle(style);
         for (Text sibling : text.getSiblings()) {
-            translated.append(translate((MutableText) sibling, locale));
+            translated.append(translate(sibling, locale));
         }
         return translated;
     }

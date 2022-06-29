@@ -117,7 +117,7 @@ public class PlaceBlockBehavior extends FallibleItemDispenserBehavior {
             } else {
                 world.setBlockState(pos, state);
             }
-            NbtCompound blockEntityTag = itemStack.getSubTag("BlockEntityTag");
+            NbtCompound blockEntityTag = itemStack.getSubNbt("BlockEntityTag");
             if (blockEntityTag != null && block instanceof BlockEntityProvider) {
                 BlockEntity be = world.getBlockEntity(pos);
                 if (be != null) {
@@ -127,7 +127,7 @@ public class PlaceBlockBehavior extends FallibleItemDispenserBehavior {
                     blockEntityTag.putInt("z", pos.getZ());
                     be.readNbt(blockEntityTag);
                 } else {
-                    QuickCarpet.LOG.warn("Expected a BlockEntity for {} at {},{},{}", state, pos.getX(), pos.getY(), pos.getZ());
+                    QuickCarpet.LOGGER.warn("Expected a BlockEntity for {} at {},{},{}", state, pos.getX(), pos.getY(), pos.getZ());
                 }
             }
             BlockSoundGroup soundType = state.getSoundGroup();
@@ -146,10 +146,10 @@ public class PlaceBlockBehavior extends FallibleItemDispenserBehavior {
         FALSE, WHITELIST, BLACKLIST, ALL
     }
 
-    public static boolean canPlace(Block block) {
+    public static boolean canPlace(BlockState block) {
         return switch (Settings.dispensersPlaceBlocks) {
-            case WHITELIST -> CarpetRegistry.DISPENSER_BLOCK_WHITELIST.contains(block);
-            case BLACKLIST -> !CarpetRegistry.DISPENSER_BLOCK_BLACKLIST.contains(block);
+            case WHITELIST -> block.isIn(CarpetRegistry.DISPENSER_BLOCK_WHITELIST);
+            case BLACKLIST -> !block.isIn(CarpetRegistry.DISPENSER_BLOCK_BLACKLIST);
             case ALL -> true;
             default -> false;
         };

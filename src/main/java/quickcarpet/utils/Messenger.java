@@ -1,8 +1,9 @@
 package quickcarpet.utils;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.SpawnGroup;
+import net.minecraft.entity.EntityType;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.fluid.FluidState;
 import net.minecraft.item.ItemStack;
@@ -27,11 +28,10 @@ import net.minecraft.util.math.EulerAngle;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.registry.Registry;
 import net.minecraft.village.VillagerData;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.slf4j.Logger;
 
-import javax.annotation.MatchesPattern;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collector;
@@ -42,7 +42,7 @@ import java.util.stream.DoubleStream;
  * Utility class for formatting {@link Text}s
  */
 public class Messenger {
-    private static final Logger LOG = LogManager.getLogger();
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     public static final Formatting[] GRAY_ITALIC = new Formatting[]{Formatting.GRAY, Formatting.ITALIC};
 
@@ -82,8 +82,9 @@ public class Messenger {
         return text;
     }
 
-    public static <T extends Text> T hoverText(T text, Text hoverText) {
-        text.getStyle().withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverText));
+    public static <T extends MutableText> T hoverText(T text, Text hoverText) {
+        Style style = text.getStyle().withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverText));
+        text.setStyle(style);
         return text;
     }
 
@@ -142,15 +143,8 @@ public class Messenger {
         return c(s("minecraft:", Formatting.GRAY), s(id.getPath(), Formatting.WHITE));
     }
 
-    public static Formatting creatureTypeColor(SpawnGroup type) {
-        return switch (type) {
-            case MONSTER -> Formatting.DARK_RED;
-            case CREATURE -> Formatting.DARK_GREEN;
-            case AMBIENT -> Formatting.DARK_GRAY;
-            case WATER_CREATURE -> Formatting.BLUE;
-            case WATER_AMBIENT -> Formatting.DARK_AQUA;
-            default -> Formatting.WHITE;
-        };
+    public static MutableText format(EntityType<?> entity) {
+        return format(Registry.ENTITY_TYPE.getId(entity));
     }
 
     public static MutableText tp(Vec3d pos, Formatting... style) {
@@ -205,11 +199,11 @@ public class Messenger {
         return text;
     }
 
-    public static void m(ServerCommandSource source, MutableText message) {
+    public static void m(ServerCommandSource source, Text message) {
         send(source, message, false);
     }
 
-    public static void m(ServerCommandSource source, Object... fields) {
+    public static void m(ServerCommandSource source, Text... fields) {
         m(source, c(fields));
     }
 
@@ -218,11 +212,9 @@ public class Messenger {
      * @param components Texts
      * @return Formatted multi-component text
      */
-    public static MutableText c(@Nonnull MutableText... components) {
-        MutableText message = components.length > 0 ? components[0] : new LiteralText("");
-        for (int i = 1; i < components.length; i++) {
-            message.append(components[i]);
-        }
+    public static MutableText c(@Nonnull Text... components) {
+        MutableText message = new LiteralText("");
+        for (Text t : components) message.append(t);
         return message;
     }
 
@@ -232,6 +224,22 @@ public class Messenger {
         while (it.hasNext()) {
             message.append(it.next());
         }
+        return message;
+    }
+
+    public static <T> MutableText join(Iterable<T> items, Function<T, Text> mapper, Text delimiter) {
+        return join(null, items, mapper, delimiter, null);
+    }
+
+    public static <T> MutableText join(@Nullable Text prefix, Iterable<T> items, Function<T, Text> mapper, Text delimiter, @Nullable Text suffix) {
+        MutableText message = prefix == null ? new LiteralText("") : prefix.shallowCopy();
+        boolean first = true;
+        for (T item : items) {
+            if (!first) message.append(delimiter);
+            message.append(mapper.apply(item));
+            first = false;
+        }
+        if (suffix != null) message.append(suffix);
         return message;
     }
 
@@ -274,15 +282,15 @@ public class Messenger {
         return s(String.format(Locale.ROOT, format, args), style);
     }
 
-    public static void send(ServerCommandSource source, Collection<MutableText> lines) {
+    public static void send(ServerCommandSource source, Collection<? extends Text> lines) {
         send(source, lines, false);
     }
 
-    public static void send(ServerCommandSource source, Collection<MutableText> lines, boolean sendToOps) {
+    public static void send(ServerCommandSource source, Collection<? extends Text> lines, boolean sendToOps) {
         lines.forEach(line -> send(source, line, sendToOps));
     }
 
-    public static void send(ServerCommandSource source, MutableText line, boolean sendToOps) {
+    public static void send(ServerCommandSource source, Text line, boolean sendToOps) {
         Entity entity = source.getEntity();
         if (entity instanceof ServerPlayerEntity) line = Translations.translate(line, (ServerPlayerEntity) entity);
         source.sendFeedback(line, sendToOps);
@@ -293,9 +301,9 @@ public class Messenger {
         broadcast(server, new LiteralText(message));
     }
 
-    public static void broadcast(MinecraftServer server, MutableText message) {
+    public static void broadcast(MinecraftServer server, Text message) {
         if (server == null) {
-            LOG.error("Message not delivered: " + message.getString());
+            LOGGER.error("Message not delivered: " + message.getString());
             return;
         }
         server.sendSystemMessage(message, Util.NIL_UUID);
@@ -306,10 +314,10 @@ public class Messenger {
 
     public static MutableText join(Text joiner, Text... elements) {
         if (elements.length == 0) return s("");
-        MutableText text = elements[0].copy();
+        MutableText text = elements[0].shallowCopy();
         for (int i = 1; i < elements.length; i++) {
-            text.append(joiner.copy());
-            text.append(elements[i].copy());
+            text.append(joiner.shallowCopy());
+            text.append(elements[i].shallowCopy());
         }
         return text;
     }
@@ -322,10 +330,10 @@ public class Messenger {
         MutableText empty = s("");
         return Collector.of(() -> empty,
             (a, b) -> {
-                if (!a.getSiblings().isEmpty()) a.append(joiner.copy());
+                if (!a.getSiblings().isEmpty()) a.append(joiner.shallowCopy());
                 a.append(b);
             },
-            (a, b) -> a.getSiblings().isEmpty() ? b : a.append(joiner.copy()).append(b.copy()),
+            (a, b) -> a.getSiblings().isEmpty() ? b : a.append(joiner.shallowCopy()).append(b.shallowCopy()),
             Function.identity()
         );
     }
@@ -341,15 +349,15 @@ public class Messenger {
         Formatter<Number> FLOAT = value -> dbl(value.doubleValue());
         Formatter<Boolean> BOOLEAN = value -> s(Boolean.toString(value), value ? Formatting.GREEN : Formatting.RED);
         Formatter<String> STRING = Messenger::s;
-        Formatter<Text> TEXT = Text::copy;
-        Formatter<ItemStack> ITEM_STACK = s -> c(s(s.getCount() + " "), s.toHoverableText());
+        Formatter<Text> TEXT = Text::shallowCopy;
+        Formatter<ItemStack> ITEM_STACK = s -> c(s(s.getCount() + " "), s.toHoverableText().shallowCopy());
         Formatter<EulerAngle> ROTATION = r -> s(r.getYaw() + "° yaw, " + r.getPitch() + "° pitch, " + r.getRoll() + "° roll");
         Formatter<BlockPos> BLOCK_POS = Messenger::tp;
         Formatter<? extends Enum<?>> ENUM = e -> s(e.toString().toLowerCase(Locale.ROOT));
         Formatter<?> OBJECT = o -> s(String.valueOf(o));
         Formatter<BlockState> BLOCK_STATE = Messenger::format;
         Formatter<FluidState> FLUID_STATE = Messenger::format;
-        Formatter<NbtCompound> COMPOUND_TAG = t -> NbtHelper.toPrettyPrintedText(t).copy();
+        Formatter<NbtCompound> COMPOUND_TAG = t -> NbtHelper.toPrettyPrintedText(t).shallowCopy();
         Formatter<ParticleEffect> PARTICLE = p -> s(String.valueOf(Registry.PARTICLE_TYPE.getId(p.getType())));
         Formatter<VillagerData> VILLAGER_DATA = d -> c(
             s("type="), Messenger.format(Registry.VILLAGER_TYPE, d.getType()),
@@ -364,288 +372,5 @@ public class Messenger {
                 return s("empty", Formatting.GRAY, Formatting.ITALIC);
             };
         }
-    }
-
-    /*
-     * Deprecated methods, taking String, char or PlayerEntity arguments
-     */
-
-    @Deprecated public static final Formatter<Number> NUMBER = Formatter.NUMBER;
-    @Deprecated public static final Formatter<Number> FLOAT = Formatter.FLOAT;
-    @Deprecated public static final Formatter<Boolean> BOOLEAN = Formatter.BOOLEAN;
-
-    @Deprecated public static final char ITALIC = 'i';
-    @Deprecated public static final char STRIKETHROUGH = 's';
-    @Deprecated public static final char UNDERLINE = 'u';
-    @Deprecated public static final char BOLD = 'b';
-    @Deprecated public static final char OBFUSCATED = 'o';
-    @Deprecated public static final char WHITE = 'w';
-    @Deprecated public static final char YELLOW = 'y';
-    @Deprecated public static final char LIGHT_PURPLE = 'm';
-    @Deprecated public static final char RED = 'r';
-    @Deprecated public static final char CYAN = 'c';
-    @Deprecated public static final char LIME = 'l';
-    @Deprecated public static final char BLUE = 't';
-    @Deprecated public static final char DARK_GRAY = 'f';
-    @Deprecated public static final char GRAY = 'g';
-    @Deprecated public static final char GOLD = 'd';
-    @Deprecated public static final char DARK_PURPLE = 'p';
-    @Deprecated public static final char DARK_RED = 'n';
-    @Deprecated public static final char DARK_AQUA = 'q';
-    @Deprecated public static final char DARK_GREEN = 'e';
-    @Deprecated public static final char DARK_BLUE = 'v';
-    @Deprecated public static final char BLACK = 'k';
-
-    /*
-     messsage: "desc me ssa ge"
-     desc contains:
-     i = italic
-     s = strikethrough
-     u = underline
-     b = bold
-     o = obfuscated
-
-     w = white
-     y = yellow
-     m = magenta (light purple)
-     r = red
-     c = cyan (aqua)
-     l = lime (green)
-     t = light blue (blue)
-     f = dark gray
-     g = gray
-     d = gold
-     p = dark purple (purple)
-     n = dark red (brown)
-     q = dark aqua
-     e = dark green
-     v = dark blue (navy)
-     k = black
-
-     / = action added to the previous component
-     */
-
-    @Deprecated
-    private static MutableText applyStyleToTextComponent(MutableText comp, @MatchesPattern("^[isubowymrcltfgdpnqevk]+$") String styleCode) {
-        Style style = comp.getStyle();
-        for (int i = 0; i < styleCode.length(); i++) {
-            style = applyStyle(style, styleCode.charAt(i));
-        }
-        comp.setStyle(style);
-        return comp;
-    }
-
-    @Deprecated
-    private static Style applyStyle(Style style, char styleCode) {
-        return switch (styleCode) {
-            case ITALIC -> style.withFormatting(Formatting.ITALIC);
-            case STRIKETHROUGH -> style.withFormatting(Formatting.STRIKETHROUGH);
-            case UNDERLINE -> style.withFormatting(Formatting.UNDERLINE);
-            case BOLD -> style.withFormatting(Formatting.BOLD);
-            case OBFUSCATED -> style.withFormatting(Formatting.OBFUSCATED);
-            case WHITE -> style.withColor(Formatting.WHITE);
-            case YELLOW -> style.withColor(Formatting.YELLOW);
-            case LIGHT_PURPLE -> style.withColor(Formatting.LIGHT_PURPLE);
-            case RED -> style.withColor(Formatting.RED);
-            case CYAN -> style.withColor(Formatting.AQUA);
-            case LIME -> style.withColor(Formatting.GREEN);
-            case BLUE -> style.withColor(Formatting.BLUE);
-            case DARK_GRAY -> style.withColor(Formatting.DARK_GRAY);
-            case GRAY -> style.withColor(Formatting.GRAY);
-            case GOLD -> style.withColor(Formatting.GOLD);
-            case DARK_PURPLE -> style.withColor(Formatting.DARK_PURPLE);
-            case DARK_RED -> style.withColor(Formatting.DARK_RED);
-            case DARK_AQUA -> style.withColor(Formatting.DARK_AQUA);
-            case DARK_GREEN -> style.withColor(Formatting.DARK_GREEN);
-            case DARK_BLUE -> style.withColor(Formatting.DARK_BLUE);
-            case BLACK -> style.withColor(Formatting.BLACK);
-            default -> throw new IllegalArgumentException("Unknown formatting code " + styleCode);
-        };
-    }
-
-    @Deprecated
-    public static <T extends MutableText> T style(T text, @MatchesPattern("^[isubowymrcltfgdpnqevk]+$") String style) {
-        applyStyleToTextComponent(text, style);
-        return text;
-    }
-
-    @Deprecated
-    public static <T extends MutableText> T style(T text, char style) {
-        text.setStyle(applyStyle(text.getStyle(), style));
-        return text;
-    }
-
-    @Deprecated
-    public static MutableText tp(String desc, Vec3d pos) {
-        return tp(desc, pos.x, pos.y, pos.z);
-    }
-
-    @Deprecated
-    public static MutableText tp(String desc, Waypoint waypoint) {
-        return tp(desc, waypoint.position());  //TODO: tp to waypoint
-    }
-
-    @Deprecated
-    public static MutableText tp(String desc, BlockPos pos) {
-        return tp(desc, pos.getX(), pos.getY(), pos.getZ());
-    }
-
-    @Deprecated
-    public static MutableText tp(String desc, double x, double y, double z) {
-        return tp(desc, (float) x, (float) y, (float) z);
-    }
-
-    @Deprecated
-    public static MutableText tp(String desc, float x, float y, float z) {
-        return getCoordsTextComponent(desc, x, y, z, false);
-    }
-
-    @Deprecated
-    public static MutableText tp(String desc, int x, int y, int z) {
-        return getCoordsTextComponent(desc, x, y, z, true);
-    }
-
-    @Deprecated
-    private static MutableText getCoordsTextComponent(String style, float x, float y, float z, boolean isInt) {
-        if (isInt) return runCommand(s(String.format("[ %d, %d, %d ]", (int) x, (int) y, (int) z), style), String.format("/tp %d %d %d", (int) x, (int) y, (int) z));
-        return runCommand(s(String.format("[ %.1f, %.1f, %.1f ]", x, y, z), style), String.format("/tp %.3f %.3f %.3f", x, y, z));
-    }
-
-    @Deprecated
-    public static MutableText dbl(String style, double value) {
-        return hoverText(style(format("%.1f", value), style), s(String.valueOf(value)));
-    }
-
-    @Deprecated
-    public static MutableText dbls(String style, double... doubles) {
-        return s(DoubleStream.of(doubles).mapToObj(d -> String.format("%.1f", d)).collect(Collectors.joining(", ", "[ ", " ]")));
-    }
-
-    @Deprecated
-    public static void m(PlayerEntity player, MutableText message) {
-        m(player.getCommandSource(), message);
-    }
-
-    @Deprecated
-    public static void m(PlayerEntity player, Object... fields) {
-        m(player, c(fields));
-    }
-
-    /**
-     * Formats a text or string to a text
-     * @param field Text or formatting string
-     * @return Formatted text
-     * @deprecated Use {@link #s(String)} or {@link #s(String, String)}
-     */
-    @Deprecated
-    public static MutableText c(@Nonnull Object field) {
-        if (field instanceof MutableText) return (MutableText) field;
-        if (field instanceof String) return formatComponent((String) field, null);
-        throw new IllegalArgumentException("Expected text or string");
-    }
-
-    /**
-     * Formats multiple texts or strings to a single text
-     * @param fields Texts or formatting strings
-     * @return Formatted multi-component text
-     * @deprecated Use {@link #c(MutableText...)} instead
-     */
-    @Deprecated
-    public static MutableText c(@Nonnull Object... fields) {
-        MutableText message = new LiteralText("");
-        MutableText previousText = null;
-        for (Object field : fields) {
-            if (field instanceof Text) {
-                message.append((MutableText) field);
-                previousText = (MutableText) field;
-            } else if (field instanceof Formattable) {
-                MutableText t = ((Formattable) field).format();
-                message.append(t);
-                previousText = t;
-            } else if (field instanceof String) {
-                MutableText comp = formatComponent((String) field, previousText);
-                if (comp != previousText) message.append(comp);
-                previousText = comp;
-            } else throw new IllegalArgumentException("Expected text or string");
-        }
-        return message;
-    }
-
-    @Deprecated
-    private static MutableText formatComponent(String message, MutableText previous) {
-        if (message.equalsIgnoreCase("")) {
-            return new LiteralText("");
-        }
-        String[] parts = message.split("\\s", 2);
-        String desc = parts[0];
-        String str = "";
-        if (parts.length > 1) str = parts[1];
-        if (desc.charAt(0) == '/') { // deprecated
-            if (previous != null) {
-                previous.setStyle(previous.getStyle().withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, message)));
-            }
-            return previous;
-        }
-        if (desc.charAt(0) == '?') {
-            if (previous != null) {
-                previous.setStyle(previous.getStyle().withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, message.substring(1))));
-            }
-            return previous;
-        }
-        if (desc.charAt(0) == '!') {
-            if (previous != null) {
-                previous.setStyle(previous.getStyle().withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, message.substring(1))));
-            }
-            return previous;
-        }
-        if (desc.charAt(0) == '^') {
-            if (previous != null) {
-                previous.setStyle(previous.getStyle().withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, c(message.substring(1)))));
-            }
-            return previous;
-        }
-        MutableText txt = new LiteralText(str);
-        return applyStyleToTextComponent(txt, desc);
-    }
-
-    @Deprecated
-    public static MutableText s(@Nonnull String text, @Nonnull @MatchesPattern("^[isubowymrcltfgdpnqevk]+$") String style) {
-        return style(s(text), style);
-    }
-
-    @Deprecated
-    public static MutableText s(@Nonnull String text, char style) {
-        return style(s(text), style);
-    }
-
-    @Deprecated
-    public static TranslatableText ts(@Nonnull String key, char style, Object... args) {
-        return style(t(key, args), style);
-    }
-
-    @Deprecated
-    public static TranslatableText ts(@Nonnull String key, @Nonnull String style, Object... args) {
-        return style(t(key, args), style);
-    }
-
-    @Deprecated
-    public static MutableText formats(@Nonnull String format, @Nonnull String style, Object... args) {
-        return s(String.format(format, args), style);
-    }
-
-    @Deprecated
-    public static MutableText formats(@Nonnull String format, char style, Object... args) {
-        return s(String.format(format, args), style);
-    }
-
-    @Deprecated
-    public static void send(PlayerEntity player, Collection<MutableText> lines) {
-        lines.forEach(line -> send(player, line));
-    }
-
-    @Deprecated
-    public static void send(PlayerEntity player, MutableText line) {
-        if (player instanceof ServerPlayerEntity) line = Translations.translate(line, (ServerPlayerEntity) player);
-        player.sendMessage(line, false);
     }
 }

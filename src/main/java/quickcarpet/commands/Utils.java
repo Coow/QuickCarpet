@@ -1,6 +1,5 @@
 package quickcarpet.commands;
 
-import com.google.common.collect.ImmutableList;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.ParseResults;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -22,12 +21,14 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.registry.Registry;
-import net.minecraft.util.registry.RegistryKey;
 import net.minecraft.world.BlockView;
-import quickcarpet.helper.StateInfoProvider;
+import quickcarpet.feature.stateinfo.StateInfoProvider;
 import quickcarpet.utils.Translations;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -38,7 +39,7 @@ import static net.minecraft.server.command.CommandManager.literal;
 import static quickcarpet.utils.Messenger.*;
 
 public class Utils {
-    private static final List<Formatting> ARG_COLORS = ImmutableList.of(Formatting.AQUA, Formatting.YELLOW, Formatting.GREEN, Formatting.LIGHT_PURPLE, Formatting.GOLD);
+    private static final List<Formatting> ARG_COLORS = List.of(Formatting.AQUA, Formatting.YELLOW, Formatting.GREEN, Formatting.LIGHT_PURPLE, Formatting.GOLD);
 
     interface ArgumentGetter<T> {
         T get(CommandContext<ServerCommandSource> context, String name) throws CommandSyntaxException;
@@ -105,10 +106,10 @@ public class Utils {
             ));
     }
 
-    static <S extends State<?, S>, P extends StateInfoProvider<S, ?>> int executeStateInfo(ServerCommandSource source, BlockPos pos, S state, Registry<P> providers) {
-        for (Map.Entry<RegistryKey<P>, P> e : providers.getEntries()) {
-            MutableText value = e.getValue().getAndFormat(state, source.getWorld(), pos);
-            m(source, c(Translations.translate(e.getKey()), s(": "), value));
+    public static <S extends State<?, S>, P extends StateInfoProvider<S, ?>> int executeStateInfo(ServerCommandSource source, BlockPos pos, S state, Registry<P> providers) {
+        for (P provider : providers) {
+            MutableText value = provider.getAndFormat(state, source.getWorld(), pos);
+            m(source, c(Translations.translate(providers.getKey(provider).orElseThrow()), s(": "), value));
         }
         return 0;
     }

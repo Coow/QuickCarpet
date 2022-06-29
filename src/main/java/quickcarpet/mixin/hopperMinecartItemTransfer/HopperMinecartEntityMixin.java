@@ -24,6 +24,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import quickcarpet.feature.HopperCounter;
 import quickcarpet.settings.Settings;
 
 import java.util.List;
@@ -39,7 +40,7 @@ public abstract class HopperMinecartEntityMixin extends StorageMinecartEntity im
     }
 
     @Redirect(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/vehicle/HopperMinecartEntity;canOperate()Z"))
-    private boolean operate(HopperMinecartEntity hopperMinecartEntity) {
+    private boolean quickcarpet$hopperMinecartItemTransfer$operate(HopperMinecartEntity hopperMinecartEntity) {
         if (Settings.hopperMinecartItemTransfer && this.insert()) return true;
         return this.canOperate();
     }
@@ -59,6 +60,19 @@ public abstract class HopperMinecartEntityMixin extends StorageMinecartEntity im
             ItemStack transferred = HopperBlockEntity.transfer(this, out, this.removeStack(i, 1), dir);
             if (transferred.isEmpty()) {
                 out.markDirty();
+                if (Settings.infiniteHopper) {
+                    BlockPos pos = this.getBlockPos();
+                    for (int j = 1; j <= 2; j++) {
+                        HopperCounter.Key color = HopperCounter.Key.getCounterKey(world, pos.up(j));
+                        if (color != null) {
+                            if (Settings.hopperCounters) {
+                                HopperCounter.COUNTERS.get(color).add(world.getServer(), stack.getItem(), -1);
+                            }
+                            this.setStack(i, stack);
+                            break;
+                        }
+                    }
+                }
                 return true;
             }
             this.setStack(i, stack);

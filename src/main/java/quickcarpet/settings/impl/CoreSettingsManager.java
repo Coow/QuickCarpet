@@ -10,16 +10,15 @@ import quickcarpet.api.annotation.BugFix;
 import quickcarpet.api.module.QuickCarpetModule;
 import quickcarpet.api.settings.*;
 import quickcarpet.settings.Settings;
-import quickcarpet.utils.MixinConfig;
 import quickcarpet.utils.Reflection;
 import quickcarpet.utils.Translations;
+import quickcarpet.utils.mixin.MixinConfig;
 
 import javax.annotation.Nullable;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -34,7 +33,7 @@ public class CoreSettingsManager extends SettingsManager implements quickcarpet.
     private boolean locked;
 
     public CoreSettingsManager() {
-        super(getAndVerifyCallingClass());
+        super(QuickCarpet.getInstance(), getAndVerifyCallingClass());
     }
 
     private static Class<?> getAndVerifyCallingClass() {
@@ -102,8 +101,8 @@ public class CoreSettingsManager extends SettingsManager implements quickcarpet.
     }
 
     @Override
-    protected String getTranslationKey(Field field, Rule rule, String key) {
-        return "carpet.rule." + getDefaultRuleName(field, rule) + "." + key;
+    protected String getTranslationKey(String fieldName, Rule rule, String key) {
+        return "carpet.rule." + getDefaultRuleName(fieldName, rule) + "." + key;
     }
 
     private Path getFile() {

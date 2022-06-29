@@ -14,8 +14,8 @@ import net.minecraft.util.registry.Registry;
 import net.minecraft.util.registry.RegistryKey;
 import net.minecraft.world.World;
 import quickcarpet.QuickCarpetServer;
-import quickcarpet.patches.FakeServerPlayerEntity;
-import quickcarpet.utils.extensions.WaypointContainer;
+import quickcarpet.feature.player.FakeServerPlayerEntity;
+import quickcarpet.utils.mixin.extensions.WaypointContainer;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -36,7 +36,7 @@ public record UnnamedWaypoint(@Nonnull WaypointContainer world,
     }
 
     public RegistryKey<World> getDimension() {
-        return world.getWaypointWorldKey();
+        return world.quickcarpet$getWaypointWorldKey();
     }
 
     public boolean canManipulate(ServerCommandSource source) {
@@ -48,7 +48,7 @@ public record UnnamedWaypoint(@Nonnull WaypointContainer world,
     }
 
     public Waypoint named(String name) {
-        return new Waypoint(world, name, creator, creatorUuid, position, rotation);
+        return new Waypoint(this, name);
     }
 
     public static final MapCodec<UnnamedWaypoint> CODEC = RecordCodecBuilder.mapCodec(it -> it.group(

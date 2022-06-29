@@ -2,23 +2,28 @@ package quickcarpet.feature;
 
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.inventory.CraftingInventory;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.packet.s2c.play.ScreenHandlerSlotUpdateS2CPacket;
-import net.minecraft.screen.CraftingScreenHandler;
+import net.minecraft.recipe.Recipe;
+import net.minecraft.recipe.RecipeMatcher;
+import net.minecraft.recipe.book.RecipeBookCategory;
+import net.minecraft.screen.AbstractRecipeScreenHandler;
+import net.minecraft.screen.ScreenHandlerType;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-public class AutoCraftingTableContainer extends CraftingScreenHandler {
+public class AutoCraftingTableContainer extends AbstractRecipeScreenHandler<CraftingInventory> {
     private final CraftingTableBlockEntity blockEntity;
     private final PlayerEntity player;
 
     AutoCraftingTableContainer(int id, PlayerInventory playerInventory, CraftingTableBlockEntity blockEntity) {
-        super(id, playerInventory);
+        super(ScreenHandlerType.CRAFTING, id);
         this.blockEntity = blockEntity;
         this.player = playerInventory.player;
-        slots.clear();
+
         this.addSlot(new OutputSlot(this.blockEntity));
 
         for(int y = 0; y < 3; ++y) {
@@ -47,8 +52,8 @@ public class AutoCraftingTableContainer extends CraftingScreenHandler {
     }
 
     @Override
-    public ItemStack transferSlot(PlayerEntity player, int slot) {
-        if (slot == 0) {
+    public ItemStack transferSlot(PlayerEntity player, int index) {
+        if (index == 0) {
             ItemStack before = this.blockEntity.getStack(0).copy();
             ItemStack current = before.copy();
             if (!this.insertItem(current, 10, 46, true)) {
@@ -57,12 +62,89 @@ public class AutoCraftingTableContainer extends CraftingScreenHandler {
             this.blockEntity.removeStack(0, before.getCount() - current.getCount());
             return this.blockEntity.getStack(0);
         }
-        return super.transferSlot(player, slot);
+        ItemStack result = ItemStack.EMPTY;
+        Slot slot = this.slots.get(index);
+        if (slot != null && slot.hasStack()) {
+            ItemStack tmp = slot.getStack();
+            result = tmp.copy();
+            if (index >= 10 && index < 46) {
+                if (!this.insertItem(tmp, 1, 10, false)) {
+                    if (index < 37) {
+                        if (!this.insertItem(tmp, 37, 46, false)) {
+                            return ItemStack.EMPTY;
+                        }
+                    } else if (!this.insertItem(tmp, 10, 37, false)) {
+                        return ItemStack.EMPTY;
+                    }
+                }
+            } else if (!this.insertItem(tmp, 10, 46, false)) {
+                return ItemStack.EMPTY;
+            }
+
+            if (tmp.isEmpty()) {
+                slot.setStack(ItemStack.EMPTY);
+            } else {
+                slot.markDirty();
+            }
+
+            if (tmp.getCount() == result.getCount()) {
+                return ItemStack.EMPTY;
+            }
+
+            slot.onTakeItem(player, tmp);
+        }
+
+        return result;
+    }
+
+    @Override
+    public void populateRecipeFinder(RecipeMatcher finder) {
+        this.blockEntity.provideRecipeInputs(finder);
+    }
+
+    @Override
+    public boolean canInsertIntoSlot(ItemStack stack, Slot slot) {
+        return canInsertIntoSlot(slot.id) && super.canInsertIntoSlot(stack, slot);
     }
 
     @Override
     public void clearCraftingSlots() {
         this.blockEntity.clear();
+    }
+
+    @Override
+    public boolean matches(Recipe<? super CraftingInventory> recipe) {
+        return this.blockEntity.matches(recipe);
+    }
+
+    @Override
+    public int getCraftingResultSlotIndex() {
+        return 0;
+    }
+
+    @Override
+    public int getCraftingWidth() {
+        return 3;
+    }
+
+    @Override
+    public int getCraftingHeight() {
+        return 3;
+    }
+
+    @Override
+    public int getCraftingSlotCount() {
+        return 10;
+    }
+
+    @Override
+    public RecipeBookCategory getCategory() {
+        return RecipeBookCategory.CRAFTING;
+    }
+
+    @Override
+    public boolean canInsertIntoSlot(int index) {
+        return index != this.getCraftingResultSlotIndex();
     }
 
     @Override

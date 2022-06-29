@@ -17,15 +17,15 @@ import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
 import quickcarpet.QuickCarpetServer;
 import quickcarpet.logging.Loggers;
 import quickcarpet.settings.Settings;
-import quickcarpet.utils.CarefulBreakHelper;
+import quickcarpet.utils.ThreadLocals;
 
 import java.util.function.Supplier;
 
 @Mixin(Block.class)
 public class BlockMixin {
     @Inject(method = "dropStack(Lnet/minecraft/world/World;Ljava/util/function/Supplier;Lnet/minecraft/item/ItemStack;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/ItemEntity;setToDefaultPickupDelay()V"), cancellable = true, locals = LocalCapture.CAPTURE_FAILHARD)
-    private static void doCarefulBreak(World world, Supplier<ItemEntity> supplier, ItemStack stack, CallbackInfo ci, ItemEntity item) {
-        ServerPlayerEntity player = CarefulBreakHelper.miningPlayer.get();
+    private static void quickcarpet$carefulBreak(World world, Supplier<ItemEntity> supplier, ItemStack stack, CallbackInfo ci, ItemEntity item) {
+        ServerPlayerEntity player = ThreadLocals.miningPlayer.get();
         if (Settings.carefulBreak && player != null && player.isSneaking() && QuickCarpetServer.getInstance().loggers.isSubscribed(player, Loggers.CAREFUL_BREAK)) {
             item.onPlayerCollision(player);
             if (item.isRemoved()) {

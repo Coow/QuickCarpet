@@ -5,15 +5,14 @@ import com.mojang.authlib.minecraft.MinecraftSessionService;
 import com.mojang.datafixers.DataFixer;
 import net.fabricmc.api.EnvType;
 import net.minecraft.resource.ResourcePackManager;
-import net.minecraft.resource.ServerResourceManager;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.SaveLoader;
 import net.minecraft.server.WorldGenerationProgressListenerFactory;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.test.TestCompletionListener;
 import net.minecraft.test.TestServer;
 import net.minecraft.test.TestSet;
 import net.minecraft.util.UserCache;
-import net.minecraft.util.registry.DynamicRegistryManager;
-import net.minecraft.world.SaveProperties;
 import net.minecraft.world.level.storage.LevelStorage;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -22,6 +21,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import quickcarpet.QuickCarpet;
+import quickcarpet.QuickCarpetServer;
+import quickcarpet.settings.Settings;
 import quickcarpet.test.ServerStarter;
 
 import java.net.Proxy;
@@ -30,14 +31,17 @@ import java.net.Proxy;
 public abstract class TestServerMixin extends MinecraftServer {
     @Shadow private TestSet testSet;
 
-    public TestServerMixin(Thread serverThread, DynamicRegistryManager.Impl registryManager, LevelStorage.Session session, SaveProperties saveProperties, ResourcePackManager dataPackManager, Proxy proxy, DataFixer dataFixer, ServerResourceManager serverResourceManager, MinecraftSessionService sessionService, GameProfileRepository gameProfileRepo, UserCache userCache, WorldGenerationProgressListenerFactory worldGenerationProgressListenerFactory) {
-        super(serverThread, registryManager, session, saveProperties, dataPackManager, proxy, dataFixer, serverResourceManager, sessionService, gameProfileRepo, userCache, worldGenerationProgressListenerFactory);
+    public TestServerMixin(Thread serverThread, LevelStorage.Session session, ResourcePackManager dataPackManager, SaveLoader saveLoader, Proxy proxy, DataFixer dataFixer, MinecraftSessionService sessionService, GameProfileRepository gameProfileRepo, UserCache userCache, WorldGenerationProgressListenerFactory worldGenerationProgressListenerFactory) {
+        super(serverThread, session, dataPackManager, saveLoader, proxy, dataFixer, sessionService, gameProfileRepo, userCache, worldGenerationProgressListenerFactory);
     }
 
     @Inject(method = "setupServer", at = @At(value = "INVOKE", target = "Lnet/minecraft/test/TestServer;loadWorld()V"))
     private void onSetupServerDedicated(CallbackInfoReturnable<Boolean> cir) {
         QuickCarpet.getInstance().onGameStarted(EnvType.SERVER);
         QuickCarpet.getInstance().onServerLoaded((TestServer) (Object) this);
+        Settings.MANAGER.getRule("spawnChunkLevel").set("1", false);
+        // FIXME: somehow tick warp breaks some tests
+        QuickCarpetServer.getInstance().tickSpeed.setTickRateGoal(1000);
     }
 
     @Inject(method = "runTestBatches", at = @At("RETURN"))
@@ -47,7 +51,9 @@ public abstract class TestServerMixin extends MinecraftServer {
 
     @Override
     public void shutdown() {
-        ServerStarter.COMPLETION_LISTENER.onStopped();
+        for (TestCompletionListener l : ServerStarter.COMPLETION_LISTENERS) {
+            l.onStopped();
+        }
         super.shutdown();
     }
 }

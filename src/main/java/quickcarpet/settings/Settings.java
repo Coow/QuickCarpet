@@ -1,24 +1,26 @@
 package quickcarpet.settings;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.SharedConstants;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.dedicated.DedicatedServer;
 import net.minecraft.server.world.ChunkTicketType;
 import net.minecraft.server.world.ServerChunkManager;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.TranslatableText;
+import net.minecraft.text.Text;
 import net.minecraft.util.Pair;
 import net.minecraft.util.Unit;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.World;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.slf4j.Logger;
 import quickcarpet.QuickCarpetServer;
 import quickcarpet.api.annotation.BugFix;
 import quickcarpet.api.settings.*;
 import quickcarpet.feature.dispenser.BreakBlockBehavior;
 import quickcarpet.feature.dispenser.PlaceBlockBehavior;
+import quickcarpet.utils.Constants;
 import quickcarpet.utils.Messenger;
+import quickcarpet.utils.SpawningAlgorithm;
 import quickcarpet.utils.Translations;
 
 import java.io.FileOutputStream;
@@ -26,9 +28,11 @@ import java.io.IOException;
 import java.util.Optional;
 
 import static quickcarpet.api.settings.RuleCategory.*;
+import static quickcarpet.utils.Constants.Validator.Texts.TNT_ANGLE;
+import static quickcarpet.utils.Constants.Validator.Texts.VIEW_DISTANCE_INTEGRATED;
 
 public class Settings {
-    private static final Logger LOGGER = LogManager.getLogger();
+    private static final Logger LOGGER = LogUtils.getLogger();
     public static final RuleUpgrader RULE_UPGRADER = new RuleUpgrader() {
         @Override
         public Pair<String, String> upgrade(String key, String value) {
@@ -36,6 +40,7 @@ public class Settings {
                 case "silverFishDropGravel" -> new Pair<>("renewableGravel", "true".equals(value) ? "silverfish" : "none");
                 case "mobInFireConvertsSandToSoulsand" -> new Pair<>("renewableSoulSand", value);
                 case "fireChargeConvertsToNetherrack" -> new Pair<>("renewableNetherrack", value);
+                case "explosionNoBlockDamage" -> new Pair<>("explosionBlockDamage", "true".equals(value) ? "false" : "true");
                 default -> null;
             };
         }
@@ -78,6 +83,9 @@ public class Settings {
     @Rule(category = FEATURE)
     public static boolean autoCraftingTable = false;
 
+    @Rule(category = FEATURE)
+    public static boolean autoJukebox = false;
+
     @Rule(category = {FEATURE, EXPERIMENTAL})
     public static boolean betterChunkLoading = false;
 
@@ -95,6 +103,9 @@ public class Settings {
 
     @Rule(category = FIX)
     public static boolean carpetDuplicationFix = false;
+
+    @Rule(category = CREATIVE)
+    public static boolean carpets;
 
     @Rule(category = COMMANDS)
     public static boolean cameraModeRestoreLocation = true;
@@ -164,6 +175,9 @@ public class Settings {
     public static PlaceBlockBehavior.Option dispensersPlaceBlocks = PlaceBlockBehavior.Option.FALSE;
 
     @Rule(category = FEATURE)
+    public static boolean dispensersScrapeCopper = false;
+
+    @Rule(category = FEATURE)
     public static boolean dispensersShearVines = false;
 
     @Rule(category = FEATURE)
@@ -182,7 +196,10 @@ public class Settings {
     public static boolean dustOnPistons = false;
 
     @Rule(category = TNT)
-    public static boolean explosionNoBlockDamage = false;
+    public static boolean explosionBlockDamage = true;
+
+    @Rule(category = CREATIVE)
+    public static boolean extremeBehaviors = false;
 
     @Rule(
             options = {"32768", "250000", "1000000"},
@@ -212,6 +229,12 @@ public class Settings {
     @Rule(category = FEATURE)
     public static boolean hopperMinecartItemTransfer = false;
 
+    @Rule(category = FEATURE)
+    public static boolean huskSpawningInDesertPyramids = false;
+
+    @Rule(category = CREATIVE)
+    public static boolean infiniteHopper = false;
+
     @Rule(category = EXPERIMENTAL, onChange = IsDevelopmentListener.class)
     public static boolean isDevelopment = SharedConstants.isDevelopment;
 
@@ -225,6 +248,12 @@ public class Settings {
 
     @Rule(category = FIX, bug = @BugFix("MC-206922"))
     public static boolean lightningKillsDropsFix = false;
+
+    @Rule(category = CREATIVE, options = {"-1", "0", "4"})
+    public static double localDifficulty = -1;
+
+    @Rule(category = CREATIVE, options = {"0", "1", "2"}, validator = Validator.NonNegative.class)
+    public static double mobcapMultiplier = 1;
 
     @Rule(category = FEATURE)
     public static boolean movableBlockEntities = false;
@@ -306,14 +335,17 @@ public class Settings {
         }
 
         @Override
-        public Optional<TranslatableText> validate(Integer value) {
-            if (value < 1 || value > 32) return Optional.of(Messenger.t("carpet.validator.range", 1, 32));
+        public Optional<Text> validate(Integer value) {
+            if (value < 1 || value > 32) return Optional.of(Messenger.t(Constants.Validator.Keys.RANGE, 1, 32));
             return Optional.empty();
         }
     }
 
     @Rule(category = EXPERIMENTAL, onChange = SpawnChunkLevel.class, validator = SpawnChunkLevel.class)
     public static int spawnChunkLevel = 11;
+
+    @Rule(category = EXPERIMENTAL)
+    public static SpawningAlgorithm spawningAlgorithm = SpawningAlgorithm.VANILLA;
 
     @Rule(category = SURVIVAL)
     public static boolean stackableShulkerBoxes = false;
@@ -332,10 +364,10 @@ public class Settings {
 
     public static class TNTAngle implements Validator<Double> {
         @Override
-        public Optional<TranslatableText> validate(Double value) {
+        public Optional<Text> validate(Double value) {
             if (value == -1) return Optional.empty();
             if (value >= 0 && value < 360) return Optional.empty();
-            return Optional.of(Messenger.t("carpet.validator.tntAngle"));
+            return Optional.of(TNT_ANGLE);
         }
     }
 
@@ -351,19 +383,28 @@ public class Settings {
     @Rule(category = {FIX, EXPERIMENTAL})
     public static boolean updateSuppressionCrashFix = false;
 
+    @Rule(category = {CREATIVE, EXPERIMENTAL})
+    public static boolean updateSuppressionBlock = false;
+
+    @Rule(category = {FEATURE, RENEWABLE})
+    public static boolean renewableDeepslate = false;
+
     @Rule(category = {}, validator = ViewDistance.class, onChange = ViewDistance.class)
     public static int viewDistance = -1;
 
+    @Rule(category = {FIX})
+    public static boolean worldBorderSpawningFix = false;
+
     public static class ViewDistance implements ChangeListener<Integer>, Validator<Integer> {
         @Override
-        public Optional<TranslatableText> validate(Integer value) {
+        public Optional<Text> validate(Integer value) {
             if (value == -1) return Optional.empty();
             MinecraftServer server = QuickCarpetServer.getNullableMinecraftServer();
             if (server != null && !server.isDedicated()) {
-                return Optional.of(Messenger.t("carpet.validator.viewDistance.integrated"));
+                return Optional.of(VIEW_DISTANCE_INTEGRATED);
             }
             if (value >= 2 && value <= 32) return Optional.empty();
-            return Optional.of(Messenger.t("carpet.validator.range", 2, 32));
+            return Optional.of(Messenger.t(Constants.Validator.Keys.RANGE, 2, 32));
         }
 
         @Override

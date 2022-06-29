@@ -5,15 +5,13 @@ import net.minecraft.Bootstrap;
 import net.minecraft.SharedConstants;
 import net.minecraft.resource.*;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.command.CommandManager;
 import net.minecraft.test.*;
-import net.minecraft.util.Util;
 import net.minecraft.util.crash.CrashReport;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.registry.DynamicRegistryManager;
 import net.minecraft.world.level.storage.LevelStorage;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.spongepowered.asm.mixin.MixinEnvironment;
 import quickcarpet.settings.Settings;
 
 import java.io.IOException;
@@ -29,12 +27,21 @@ import java.util.*;
 public class ServerStarter {
     private static final Path OUTPUT_DIR = Path.of("../build/test-results/runTestServer");
     private static final Logger LOGGER = LogManager.getLogger("QuickCarpet|TestManager");
-    public static final TestCompletionListener COMPLETION_LISTENER;
+    public static final List<TestCompletionListener> COMPLETION_LISTENERS = new ArrayList<>();
 
     static {
         try {
             Files.createDirectories(OUTPUT_DIR);
-            COMPLETION_LISTENER = new XmlReportingTestCompletionListener(ServerStarter.OUTPUT_DIR.resolve("TEST-gametest.xml").toFile());
+            COMPLETION_LISTENERS.add(new XmlReportingTestCompletionListener(ServerStarter.OUTPUT_DIR.resolve("TEST-gametest.xml").toFile()));
+            COMPLETION_LISTENERS.add(new TestCompletionListener() {
+                @Override
+                public void onTestFailed(GameTestState test) {
+                    test.getThrowable().printStackTrace();
+                }
+
+                @Override
+                public void onTestPassed(GameTestState test) {}
+            });
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -48,12 +55,16 @@ public class ServerStarter {
 
         @Override
         public void onPassed(GameTestState test) {
-            COMPLETION_LISTENER.onTestPassed(test);
+            for (TestCompletionListener l : COMPLETION_LISTENERS) {
+                l.onTestPassed(test);
+            }
         }
 
         @Override
         public void onFailed(GameTestState test) {
-            COMPLETION_LISTENER.onTestFailed(test);
+            for (TestCompletionListener l : COMPLETION_LISTENERS) {
+                l.onTestFailed(test);
+            }
         }
     };
 
@@ -63,12 +74,12 @@ public class ServerStarter {
         CrashReport.initCrashReport();
         Bootstrap.initialize();
         Bootstrap.logMissing();
+        MixinEnvironment.getCurrentEnvironment().audit();
         List<String> argList = new ArrayList<>(Arrays.asList(args));
         argList.remove("nogui");
         if (!argList.isEmpty()) {
             StructureTestUtil.testStructuresDirectoryName = Path.of(argList.get(0)).toAbsolutePath().toString();
         }
-        DynamicRegistryManager.Impl registryManager = DynamicRegistryManager.create();
         Path runDir = Path.of(".");
         Path worldPath = runDir.resolve("gametestworld");
         if (Files.exists(worldPath)) {
@@ -95,8 +106,6 @@ public class ServerStarter {
         );
         DataPackSettings dataPackSettings = new DataPackSettings(Collections.emptyList(), Collections.emptyList());
         MinecraftServer.loadDataPacks(resourcePackManager, dataPackSettings, false);
-        ServerResourceManager serverResourceManager = ServerResourceManager.reload(resourcePackManager.createResourcePacks(), registryManager, CommandManager.RegistrationEnvironment.DEDICATED, 4, Util.getMainWorkerExecutor(), Runnable::run).get();
-        serverResourceManager.loadRegistryTags();
         Collection<TestFunction> testFunctions = collectTestFunctions();
         Collection<GameTestBatch> batches = TestUtil.createBatches(testFunctions);
         LOGGER.info("Found {} test functions in {} batches", testFunctions.size(), batches.size());
@@ -109,7 +118,7 @@ public class ServerStarter {
             processedBatches.add(processBatch(batch));
         }
         BlockPos spawnPos = new BlockPos(0, 5, 0);
-        MinecraftServer.startServer(serverThread -> new TestServer(serverThread, storageSession, resourcePackManager, serverResourceManager, processedBatches, spawnPos, registryManager));
+        MinecraftServer.startServer(serverThread -> TestServer.create(serverThread, storageSession, resourcePackManager, processedBatches, spawnPos));
     }
 
     private static Collection<TestFunction> collectTestFunctions() throws URISyntaxException, IOException {
@@ -137,7 +146,7 @@ public class ServerStarter {
     private static GameTestBatch processBatch(GameTestBatch batch) {
         String id = batch.getId();
         if (!id.startsWith("rules/")) return batch;
-        String[] ruleSpecs = id.substring(6, id.lastIndexOf(':')).split(",");
+        String[] ruleSpecs = id.substring(6, id.indexOf(':')).split(",");
         Map<String, String> rules = new LinkedHashMap<>();
         for (String ruleSpec : ruleSpecs) {
             String[] parts = ruleSpec.split("=", 2);

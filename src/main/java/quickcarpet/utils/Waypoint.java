@@ -2,6 +2,7 @@ package quickcarpet.utils;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.mojang.logging.LogUtils;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.JsonOps;
 import net.minecraft.server.command.ServerCommandSource;
@@ -17,16 +18,14 @@ import net.minecraft.util.registry.Registry;
 import net.minecraft.util.registry.RegistryKey;
 import net.minecraft.world.World;
 import net.minecraft.world.dimension.DimensionType;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.slf4j.Logger;
 import quickcarpet.QuickCarpetServer;
-import quickcarpet.utils.extensions.WaypointContainer;
+import quickcarpet.utils.mixin.extensions.WaypointContainer;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,15 +35,22 @@ import static quickcarpet.utils.Messenger.c;
 import static quickcarpet.utils.Messenger.s;
 
 public record Waypoint(UnnamedWaypoint location, String name) implements Comparable<Waypoint>, Messenger.Formattable {
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    public static Codec<Map<String, Waypoint>> MAP_CODEC = UnnamedWaypoint.MAP_CODEC.xmap(map -> {
-        Map<String, Waypoint> map2 = new LinkedHashMap<>();
-        for (Map.Entry<String, UnnamedWaypoint> e : map.entrySet()) map2.put(e.getKey(), e.getValue().named(e.getKey()));
-        return map2;
-    }, map -> (Map<String, UnnamedWaypoint>) (Map) map);
+    public static Codec<Map<String, Waypoint>> MAP_CODEC = UnnamedWaypoint.MAP_CODEC.xmap(unnamed -> {
+        Map<String, Waypoint> named = new LinkedHashMap<>();
+        for (Map.Entry<String, UnnamedWaypoint> e : unnamed.entrySet()) {
+            named.put(e.getKey(), e.getValue().named(e.getKey()));
+        }
+        return named;
+    }, named -> {
+        Map<String, UnnamedWaypoint> unnamed = new LinkedHashMap<>();
+        for (Map.Entry<String, Waypoint> e : named.entrySet()) {
+            unnamed.put(e.getKey(), e.getValue().location());
+        }
+        return unnamed;
+    });
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-    private static final Logger LOGGER = LogManager.getLogger();
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     public Waypoint(@Nonnull WaypointContainer world, @Nonnull String name, @Nullable String creator, @Nullable UUID creatorUuid, @Nonnull Vec3d position, @Nonnull Vec2f rotation) {
         this(new UnnamedWaypoint(world, creator, creatorUuid, position, rotation), name);
@@ -97,7 +103,7 @@ public record Waypoint(UnnamedWaypoint location, String name) implements Compara
 
     public static Set<Waypoint> getAllWaypoints(Iterable<WaypointContainer> worlds) {
         Set<Waypoint> all = new LinkedHashSet<>();
-        for (WaypointContainer world : worlds) all.addAll(world.getWaypoints().values());
+        for (WaypointContainer world : worlds) all.addAll(world.quickcarpet$getWaypoints().values());
         return all;
     }
 
@@ -110,12 +116,12 @@ public record Waypoint(UnnamedWaypoint location, String name) implements Compara
             if (dimension != null) name = name.substring(slash + 1);
         }
         if (dimension == null) {
-            Map<String, Waypoint> waypoints = defaultWorld.getWaypoints();
+            Map<String, Waypoint> waypoints = defaultWorld.quickcarpet$getWaypoints();
             if (waypoints.containsKey(name)) return waypoints.get(name);
         }
         for (WaypointContainer world : worlds) {
-            if (world.getWaypointWorldKey() != dimension) continue;
-            Map<String, Waypoint> waypoints = world.getWaypoints();
+            if (world.quickcarpet$getWaypointWorldKey() != dimension) continue;
+            Map<String, Waypoint> waypoints = world.quickcarpet$getWaypoints();
             if (waypoints.containsKey(name)) return waypoints.get(name);
         }
         return null;
@@ -133,7 +139,7 @@ public record Waypoint(UnnamedWaypoint location, String name) implements Compara
 
     public static void saveWaypoints(WaypointContainer world) throws IOException {
         Path file = getWaypointFile(world);
-        Map<String, Waypoint> waypoints = world.getWaypoints();
+        Map<String, Waypoint> waypoints = world.quickcarpet$getWaypoints();
         if (waypoints.isEmpty()) {
             Files.deleteIfExists(file);
             return;
@@ -146,9 +152,9 @@ public record Waypoint(UnnamedWaypoint location, String name) implements Compara
     }
 
     public static Path getWaypointFile(WaypointContainer world) {
-        File rootFile = new File(".");
-        File saveDirFile = DimensionType.getSaveDirectory(world.getWaypointWorldKey(), rootFile);
-        Path relPath = rootFile.toPath().relativize(saveDirFile.toPath()).resolve("data/waypoints.json");
+        Path rootPath = Path.of(".");
+        Path saveDirPath = DimensionType.getSaveDirectory(world.quickcarpet$getWaypointWorldKey(), rootPath);
+        Path relPath = rootPath.relativize(saveDirPath).resolve("data/waypoints.json");
         return QuickCarpetServer.getConfigFile(WorldSavePath.ROOT).resolve(relPath);
     }
 

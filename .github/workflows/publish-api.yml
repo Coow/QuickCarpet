@@ -1,0 +1,39 @@
+name: Publish API to Maven
+on: workflow_dispatch
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container:
+      image: gradle:7.4-jdk17
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Set repository as a safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Cache Gradle packages
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.gradle/caches
+            /home/gradle/.gradle/caches
+          key: ${{ runner.os }}-gradle-4.7-jdk17-${{ hashFiles('*gradle.*', '*/*gradle.kts', 'buildSrc/src/**', '*.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-4.7-jdk17-
+      - name: Cache Loom Files
+        uses: actions/cache@v2
+        with:
+          path: |
+            build/loom-cache
+            .gradle/loom-cache
+          key: ${{ runner.os }}-loom-${{ hashFiles('*gradle.*', '*/*gradle.kts', 'buildSrc/src/**', '*.versions.toml', 'src/main/resource/quickcarpet.accesswidener') }}
+          restore-keys: |
+            ${{ runner.os }}-loom-
+      - name: Publish to Maven
+        env:
+          MAVEN_URL: ${{ secrets.MAVEN_URL }}
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+        run: ./gradlew publish

@@ -58,6 +58,14 @@ Default: `false`
 Options: `true`, `false`  
 Categories: feature  
 
+## autoJukebox
+Automatic jukebox
+
+Type: `boolean`  
+Default: `false`  
+Options: `true`, `false`  
+Categories: feature  
+
 ## betterChunkLoading
 Makes things load chunks again
 
@@ -123,6 +131,22 @@ Type: `boolean`
 Default: `false`  
 Options: `true`, `false`  
 Categories: fix  
+
+## carpets
+Executes commands when placing certain carpets
+
+- pink: /spawn list  
+- black: /spawn mobcaps  
+- gray: /blockinfo  
+- blue: /fluidinfo  
+- brown: /measure  
+- green: /counter  
+- red: /counter reset  
+
+Type: `boolean`  
+Default: `false`  
+Options: `true`, `false`  
+Categories: creative  
 
 ## commandBlockInfo
 Enables /blockinfo command to get info about blocks
@@ -288,6 +312,14 @@ Default: `false`
 Options: `false`, `whitelist`, `blacklist`, `all`  
 Categories: feature  
 
+## dispensersScrapeCopper
+Dispensers with axes can scrape and unwax copper
+
+Type: `boolean`  
+Default: `false`  
+Options: `true`, `false`  
+Categories: feature  
+
 ## dispensersShearVines
 Dispensers can shear vines
 
@@ -340,13 +372,24 @@ Default: `false`
 Options: `true`, `false`  
 Categories: experimental  
 
-## explosionNoBlockDamage
-Explosions won't destroy blocks
+## explosionBlockDamage
+Explosions won't destroy blocks when set to false
+
+Type: `boolean`  
+Default: `true`  
+Options: `true`, `false`  
+Categories: tnt  
+
+## extremeBehaviors
+Increases the odds of rare behaviors
+
+- Droppers: changes the velocity distribution from normal (std 1) to uniform [-8;8)  
+- Withers: increases the change for blue skulls from 1:1000 to 1:10  
 
 Type: `boolean`  
 Default: `false`  
 Options: `true`, `false`  
-Categories: tnt  
+Categories: creative  
 
 ## fallingBlockDuplicationFix
 Fix duplicating falling blocks using end portals
@@ -406,7 +449,7 @@ Options: `true`, `false`
 Categories: commands  
 
 ## hopperMinecartCooldown
-carpet.rule.hopperMinecartCooldown.description
+Adds a cooldown to the hopper minecart
 
 Type: `int`  
 Default: `0`  
@@ -421,6 +464,24 @@ Type: `boolean`
 Default: `false`  
 Options: `true`, `false`  
 Categories: feature  
+
+## huskSpawningInDesertPyramids
+Husks will spawn in desert pyramids
+
+Type: `boolean`  
+Default: `false`  
+Options: `true`, `false`  
+Categories: feature  
+
+## infiniteHopper
+Hoppers "pulling" from wool will keep the items they push out
+
+Also works together with hopperCounters and hopperMinecartItemTransfer  
+
+Type: `boolean`  
+Default: `false`  
+Options: `true`, `false`  
+Categories: creative  
 
 ## isDevelopment
 Sets the isDevelopment constant
@@ -440,6 +501,23 @@ Default: `false`
 Options: `true`, `false`  
 Categories: fix  
 Fixes: [MC-206922](https://bugs.mojang.com/browse/MC-206922)  
+
+## localDifficulty
+Set a fixed local difficulty (-1 for vanilla behavior)
+
+Type: `double`  
+Default: `-1.0`  
+Options: `-1`, `0`, `4`  
+Categories: creative  
+
+## mobcapMultiplier
+Change all mobcaps by this factor (e.g. 1.5 would change hostile mobs from 70 to 105)
+
+Type: `double`  
+Default: `1.0`  
+Options: `0`, `1`, `2`  
+Categories: creative  
+Validator: `>= 0`  
 
 ## movableBlockEntities
 Pistons can push block entities, like hoppers, chests etc.
@@ -537,6 +615,14 @@ Default: `false`
 Options: `true`, `false`  
 Categories: feature, renewable  
 
+## renewableDeepslate
+Makes cobblestone generators generate deepslate instead if below y16
+
+Type: `boolean`  
+Default: `false`  
+Options: `true`, `false`  
+Categories: feature, renewable  
+
 ## renewableGravel
 Cobblestone crushed by falling anvils makes gravel, or silverfish drop a gravel item when breaking out of a block
 
@@ -621,6 +707,16 @@ Default: `11`
 Categories: experimental  
 Validator: `quickcarpet.settings.Settings$SpawnChunkLevel`  
 
+## spawningAlgorithm
+Select the algorithm used for mob spawning
+
+- smart: select blocks from the lowest non-air block up instead of the lowest buildable block  
+
+Type: `SpawningAlgorithm`  
+Default: `vanilla`  
+Options: `vanilla`, `smart`  
+Categories: experimental  
+
 ## stackableShulkerBoxes
 Empty shulker boxes can stack to 64 when dropped on the ground
 
@@ -688,6 +784,14 @@ Default: `true`
 Options: `true`, `false`  
 Categories: tnt  
 
+## updateSuppressionBlock
+Sending block updates to a barrier block triggers update suppression
+
+Type: `boolean`  
+Default: `false`  
+Options: `true`, `false`  
+Categories: creative, experimental  
+
 ## updateSuppressionCrashFix
 Fixes updates suppression causing server crashes
 
@@ -704,6 +808,14 @@ Use the vanilla client setting for integrated servers
 Type: `int`  
 Default: `-1`  
 Validator: `quickcarpet.settings.Settings$ViewDistance`  
+
+## worldBorderSpawningFix
+Prevents pillagers and zombie sieges from spawning outside the world border
+
+Type: `boolean`  
+Default: `false`  
+Options: `true`, `false`  
+Categories: fix  
 
 ## xpCoolDown
 Delay before players can absorb the next Experience Orb

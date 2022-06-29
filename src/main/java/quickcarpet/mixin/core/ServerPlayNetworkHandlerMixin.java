@@ -1,6 +1,8 @@
 package quickcarpet.mixin.core;
 
 import net.minecraft.network.ClientConnection;
+import net.minecraft.network.NetworkThreadUtils;
+import net.minecraft.network.listener.ServerPlayPacketListener;
 import net.minecraft.network.packet.c2s.play.CustomPayloadC2SPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
@@ -19,17 +21,18 @@ public class ServerPlayNetworkHandlerMixin {
     @Shadow public ServerPlayerEntity player;
 
     @Inject(method = "<init>", at = @At("RETURN"))
-    private void onPlayerConnect(MinecraftServer server, ClientConnection client, ServerPlayerEntity player, CallbackInfo ci) {
+    private void quickcarpet$onPlayerConnect(MinecraftServer server, ClientConnection client, ServerPlayerEntity player, CallbackInfo ci) {
         QuickCarpet.getInstance().onPlayerConnect(player);
     }
 
     @Inject(method = "onCustomPayload", at = @At("HEAD"))
-    private void processCustomPacket(CustomPayloadC2SPacket packet, CallbackInfo ci) {
+    private void quickcarpet$onCustomPacket(CustomPayloadC2SPacket packet, CallbackInfo ci) {
+        NetworkThreadUtils.forceMainThread(packet, (ServerPlayPacketListener) this, this.player.getWorld());
         QuickCarpetServer.getInstance().getPluginChannelManager().process(this.player, packet);
     }
 
     @Inject(method = "onDisconnected", at = @At("HEAD"))
-    private void onPlayerDisconnect(Text reason, CallbackInfo ci) {
+    private void quickcarpet$onPlayerDisconnect(Text reason, CallbackInfo ci) {
         QuickCarpet.getInstance().onPlayerDisconnect(this.player);
     }
 }

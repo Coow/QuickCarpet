@@ -92,6 +92,11 @@ public class DispenserTest {
         dispense(ctx, new ItemStack(Items.BUCKET), Items.LAVA_BUCKET, Blocks.AIR, null, null);
     }
 
+    @GameTest(structureName = "dispenser_only")
+    public void vanillaPutPowderSnow(TestContext ctx) {
+        dispense(ctx, new ItemStack(Items.POWDER_SNOW_BUCKET), Items.BUCKET, Blocks.POWDER_SNOW, null, null);
+    }
+
     @GameTest(structureName = "dispenser_with_cauldron")
     public void vanillaPutPowderSnowCauldron(TestContext ctx) {
         dispense(ctx, new ItemStack(Items.POWDER_SNOW_BUCKET), null, Blocks.CAULDRON, Items.POWDER_SNOW_BUCKET, null);
@@ -104,6 +109,34 @@ public class DispenserTest {
             ctx.expectBlockProperty(FRONT_POS, LeveledCauldronBlock.LEVEL, 3);
             ctx.complete();
         });
+    }
+
+    @GameTest(structureName = "dispenser_only")
+    public void vanillaFireCharge(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.COBBLESTONE);
+        dispense(ctx, new ItemStack(Items.FIRE_CHARGE), null, Blocks.COBBLESTONE, null, () -> {
+            ctx.expectEntityAround(EntityType.SMALL_FIREBALL, FRONT_POS, 1);
+            ctx.killAllEntities();
+            ctx.complete();
+        });
+    }
+
+    @GameTest(structureName = "dispenser_only")
+    public void vanillaShearVines(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.VINE.getDefaultState().with(VineBlock.WEST, true));
+        dispense(ctx, new ItemStack(Items.SHEARS), Items.SHEARS, Blocks.VINE, null, null);
+    }
+
+    @GameTest(structureName = "dispenser_only")
+    public void vanillaGunpowder(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.STONE);
+        dispense(ctx, new ItemStack(Items.GUNPOWDER), null, Blocks.STONE, Items.GUNPOWDER, null);
+    }
+
+    @GameTest(structureName = "dispenser_only")
+    public void vanillaAxe(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.OAK_LOG);
+        dispense(ctx, new ItemStack(Items.DIAMOND_AXE), null, Blocks.OAK_LOG, Items.DIAMOND_AXE, null);
     }
 
     @GameTest(structureName = "dispenser_with_cauldron", batchId = "rules/dispensersInteractCauldron=true")
@@ -163,6 +196,11 @@ public class DispenserTest {
         });
     }
 
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersPlaceBlocks=all")
+    public void qcPutPowderSnow(TestContext ctx) {
+        dispense(ctx, new ItemStack(Items.POWDER_SNOW_BUCKET), Items.BUCKET, Blocks.POWDER_SNOW, null, null);
+    }
+
     @GameTest(structureName = "dispenser_with_cauldron", batchId = "rules/dispensersInteractCauldron=true")
     public void qcPutPowderSnowCauldron(TestContext ctx) {
         dispense(ctx, new ItemStack(Items.POWDER_SNOW_BUCKET), Items.BUCKET, Blocks.POWDER_SNOW_CAULDRON, null, null);
@@ -217,6 +255,90 @@ public class DispenserTest {
         dispense(ctx, new ItemStack(Blocks.SEA_PICKLE), null, Blocks.SEA_PICKLE, null, () -> {
             ctx.expectBlockProperty(FRONT_POS, SeaPickleBlock.PICKLES, 2);
             ctx.complete();
+        });
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/renewableNetherrack=true")
+    public void qcFireCharge(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.COBBLESTONE);
+        dispense(ctx, new ItemStack(Items.FIRE_CHARGE), null, Blocks.NETHERRACK, null, () -> {
+            ctx.dontExpectEntity(EntityType.SMALL_FIREBALL);
+            ctx.complete();
+        });
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersShearVines=true")
+    public void qcShearVines(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.VINE.getDefaultState().with(VineBlock.WEST, true));
+        dispense(ctx, new ItemStack(Items.SHEARS), Items.SHEARS, Blocks.AIR, Items.VINE, null);
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersBreakBlocks=normal")
+    public void qcGunpowderNormal(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.STONE);
+        dispense(ctx, new ItemStack(Items.GUNPOWDER), null, Blocks.AIR, Items.COBBLESTONE, null);
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersBreakBlocks=silk_touch")
+    public void qcGunpowderSilk(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.STONE);
+        dispense(ctx, new ItemStack(Items.GUNPOWDER), null, Blocks.AIR, Items.STONE, null);
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersStripLogs=true")
+    public void qcAxe1(TestContext ctx) {
+        dispense(ctx, new ItemStack(Items.DIAMOND_AXE), Items.DIAMOND_AXE, Blocks.AIR, null, null);
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersScrapeCopper=true")
+    public void qcAxe2(TestContext ctx) {
+        dispense(ctx, new ItemStack(Items.DIAMOND_AXE), Items.DIAMOND_AXE, Blocks.AIR, null, null);
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersStripLogs=true,dispensersScrapeCopper=true")
+    public void qcAxe3(TestContext ctx) {
+        dispense(ctx, new ItemStack(Items.DIAMOND_AXE), Items.DIAMOND_AXE, Blocks.AIR, null, null);
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersStripLogs=true")
+    public void qcAxeLog1(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.OAK_LOG);
+        dispense(ctx, new ItemStack(Items.DIAMOND_AXE), Items.DIAMOND_AXE, Blocks.STRIPPED_OAK_LOG, null, null);
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersStripLogs=true,dispensersScrapeCopper=true")
+    public void qcAxeLog2(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.OAK_LOG);
+        dispense(ctx, new ItemStack(Items.DIAMOND_AXE), Items.DIAMOND_AXE, Blocks.STRIPPED_OAK_LOG, null, null);
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersScrapeCopper=true")
+    public void qcAxeLog3(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.OAK_LOG);
+        dispense(ctx, new ItemStack(Items.DIAMOND_AXE), Items.DIAMOND_AXE, Blocks.OAK_LOG, null, null);
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersStripLogs=true")
+    public void qcAxeCopper1(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.WAXED_OXIDIZED_COPPER);
+        dispense(ctx, new ItemStack(Items.DIAMOND_AXE), Items.DIAMOND_AXE, Blocks.WAXED_OXIDIZED_COPPER, null, null);
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersStripLogs=true,dispensersScrapeCopper=true")
+    public void qcAxeCopper2(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.WAXED_OXIDIZED_COPPER);
+        dispense(ctx, new ItemStack(Items.DIAMOND_AXE), Items.DIAMOND_AXE, Blocks.OXIDIZED_COPPER, null, () -> {
+            ((DispenserBlockEntity) ctx.getBlockEntity(DISPENSER_POS)).clear();
+            dispense(ctx, new ItemStack(Items.DIAMOND_AXE), Items.DIAMOND_AXE, Blocks.WEATHERED_COPPER, null, null);
+        });
+    }
+
+    @GameTest(structureName = "dispenser_only", batchId = "rules/dispensersScrapeCopper=true")
+    public void qcAxeCopper3(TestContext ctx) {
+        ctx.setBlockState(FRONT_POS, Blocks.WAXED_OXIDIZED_COPPER);
+        dispense(ctx, new ItemStack(Items.DIAMOND_AXE), Items.DIAMOND_AXE, Blocks.OXIDIZED_COPPER, null, () -> {
+            ((DispenserBlockEntity) ctx.getBlockEntity(DISPENSER_POS)).clear();
+            dispense(ctx, new ItemStack(Items.DIAMOND_AXE), Items.DIAMOND_AXE, Blocks.WEATHERED_COPPER, null, null);
         });
     }
 }

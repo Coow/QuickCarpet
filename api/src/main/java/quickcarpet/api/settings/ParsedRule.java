@@ -4,11 +4,10 @@ import com.mojang.brigadier.arguments.ArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.text.TranslatableText;
+import net.minecraft.text.Text;
 import quickcarpet.api.module.QuickCarpetModule;
 
 import javax.annotation.Nullable;
-import java.lang.reflect.Field;
 import java.util.List;
 
 public interface ParsedRule<T> {
@@ -17,19 +16,32 @@ public interface ParsedRule<T> {
     SettingsManager getManager();
 
     Rule getRule();
-    Field getField();
+
+    FieldAccessor<T> getFieldAccessor();
     String getShortName();
     String getName();
-    TranslatableText getDescription();
+    /**
+     * @revised 2.0.0
+     */
+    Text getDescription();
+    /**
+     * @revised 2.0.0
+     */
     @Nullable
-    TranslatableText getExtraInfo();
+    Text getExtraInfo();
+    /**
+     * @revised 2.0.0
+     */
     @Nullable
-    TranslatableText getDeprecated();
+    Text getDeprecated();
     List<RuleCategory> getCategories();
     List<String> getOptions();
     Class<T> getType();
     Validator<T> getValidator();
     ChangeListener<T> getChangeListener();
+    /**
+     * @since 1.1.0
+     */
     boolean isDisabled();
 
     ArgumentType<?> getArgumentType();
@@ -52,9 +64,12 @@ public interface ParsedRule<T> {
     boolean hasSavedValue();
 
     class ValueException extends IllegalArgumentException {
-        public final TranslatableText message;
+        public final Text message;
 
-        public ValueException(TranslatableText message) {
+        /**
+         * @revised 2.0.0
+         */
+        public ValueException(Text message) {
             this.message = message;
         }
 

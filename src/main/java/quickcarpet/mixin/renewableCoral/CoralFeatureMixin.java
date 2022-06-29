@@ -7,7 +7,7 @@ import net.minecraft.world.WorldAccess;
 import net.minecraft.world.gen.feature.CoralFeature;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
-import quickcarpet.utils.extensions.ExtendedCoralFeature;
+import quickcarpet.utils.mixin.extensions.ExtendedCoralFeature;
 
 import java.util.Random;
 
@@ -17,7 +17,7 @@ public abstract class CoralFeatureMixin implements ExtendedCoralFeature {
     protected abstract boolean generateCoral(WorldAccess var1, Random var2, BlockPos var3, BlockState var4);
 
     @Override
-    public boolean growSpecific(World worldIn, Random random, BlockPos pos, BlockState blockUnder) {
+    public boolean quickcarpet$growSpecific(World worldIn, Random random, BlockPos pos, BlockState blockUnder) {
         return generateCoral(worldIn, random, pos, blockUnder);
     }
 }

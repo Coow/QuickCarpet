@@ -8,7 +8,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import quickcarpet.utils.extensions.ExtendedWorldChunkFillUpdates;
+import quickcarpet.utils.mixin.extensions.ExtendedWorldChunkFillUpdates;
 
 import javax.annotation.Nullable;
 
@@ -20,7 +20,7 @@ public abstract class WorldChunkMixin implements ExtendedWorldChunkFillUpdates {
 
     @Override
     @Nullable
-    public BlockState setBlockStateWithoutUpdates(BlockPos pos, BlockState state, boolean moved) {
+    public BlockState quickcarpet$setBlockStateWithoutUpdates(BlockPos pos, BlockState state, boolean moved) {
         try {
             fillUpdates = false;
             return setBlockState(pos, state, moved);
@@ -30,12 +30,12 @@ public abstract class WorldChunkMixin implements ExtendedWorldChunkFillUpdates {
     }
 
     @Redirect(method = "setBlockState", at = @At(value = "INVOKE", target = "Lnet/minecraft/block/BlockState;onBlockAdded(Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;Z)V"))
-    private void onAdded(BlockState blockState, World world, BlockPos pos, BlockState state, boolean notify) {
+    private void quickcarpet$fillUpdates$onAdded(BlockState blockState, World world, BlockPos pos, BlockState state, boolean notify) {
         if (fillUpdates) blockState.onBlockAdded(world, pos, state, notify);
     }
 
     @Redirect(method = "setBlockState", at = @At(value = "INVOKE", target = "Lnet/minecraft/block/BlockState;onStateReplaced(Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;Z)V"))
-    private void onReplaced(BlockState oldState, World world, BlockPos pos, BlockState newState, boolean moved) {
+    private void quickcarpet$fillUpdates$onReplaced(BlockState oldState, World world, BlockPos pos, BlockState newState, boolean moved) {
         if (fillUpdates) {
             oldState.onStateReplaced(world, pos, newState, moved);
         } else {

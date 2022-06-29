@@ -5,6 +5,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.world.BlockLocating;
 import net.minecraft.world.PortalForcer;
+import net.minecraft.world.border.WorldBorder;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -20,22 +21,22 @@ public class PortalForcerMixin {
     @Shadow @Final private ServerWorld world;
 
     @Inject(method = "getPortalRect", at = @At("HEAD"))
-    private void startPortal(BlockPos blockPos, boolean bl, CallbackInfoReturnable<Optional<BlockLocating.Rectangle>> cir) {
+    private void quickcarpet$profiler$startPortal(BlockPos pos, boolean destIsNether, WorldBorder worldBorder, CallbackInfoReturnable<Optional<BlockLocating.Rectangle>> cir) {
         CarpetProfiler.startSection(this.world, CarpetProfiler.SectionType.PORTALS);
     }
 
     @Inject(method = "getPortalRect", at = @At("RETURN"))
-    private void endPortal(BlockPos blockPos, boolean bl, CallbackInfoReturnable<Optional<BlockLocating.Rectangle>> cir) {
+    private void quickcarpet$profiler$endPortal(BlockPos pos, boolean destIsNether, WorldBorder worldBorder, CallbackInfoReturnable<Optional<BlockLocating.Rectangle>> cir) {
         CarpetProfiler.endSection(this.world, CarpetProfiler.SectionType.PORTALS);
     }
 
     @Inject(method = "createPortal", at = @At("HEAD"))
-    private void startPortal(BlockPos blockPos, Direction.Axis axis, CallbackInfoReturnable<Optional<BlockLocating.Rectangle>> cir) {
+    private void quickcarpet$profiler$startPortal(BlockPos blockPos, Direction.Axis axis, CallbackInfoReturnable<Optional<BlockLocating.Rectangle>> cir) {
         CarpetProfiler.startSection(this.world, CarpetProfiler.SectionType.PORTALS);
     }
 
     @Inject(method = "createPortal", at = @At("RETURN"))
-    private void endPortal(BlockPos blockPos, Direction.Axis axis, CallbackInfoReturnable<Optional<BlockLocating.Rectangle>> cir) {
+    private void quickcarpet$profiler$endPortal(BlockPos blockPos, Direction.Axis axis, CallbackInfoReturnable<Optional<BlockLocating.Rectangle>> cir) {
         CarpetProfiler.endSection(this.world, CarpetProfiler.SectionType.PORTALS);
     }
 }

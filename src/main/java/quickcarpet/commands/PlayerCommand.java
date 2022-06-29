@@ -21,17 +21,17 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Formatting;
-import net.minecraft.util.Util;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
-import quickcarpet.helper.PlayerActionPack;
-import quickcarpet.helper.PlayerActionPack.Action;
-import quickcarpet.helper.PlayerActionPack.ActionType;
-import quickcarpet.patches.FakeServerPlayerEntity;
+import quickcarpet.feature.player.FakeServerPlayerEntity;
+import quickcarpet.feature.player.PlayerActionPack;
+import quickcarpet.feature.player.PlayerActionPack.Action;
+import quickcarpet.feature.player.PlayerActionPack.ActionType;
 import quickcarpet.settings.Settings;
-import quickcarpet.utils.extensions.ActionPackOwner;
+import quickcarpet.utils.Constants.PlayerCommand.Keys;
+import quickcarpet.utils.mixin.extensions.ActionPackOwner;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -53,15 +53,16 @@ import static net.minecraft.command.argument.Vec3ArgumentType.getVec3;
 import static net.minecraft.command.argument.Vec3ArgumentType.vec3;
 import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
+import static quickcarpet.utils.Constants.PlayerCommand.Texts.*;
 import static quickcarpet.utils.Messenger.*;
 
 public class PlayerCommand {
     // TODO: allow any order like execute
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        LiteralArgumentBuilder<ServerCommandSource> literalargumentbuilder = literal("player")
+        var player = literal("player")
             .requires(s -> s.hasPermissionLevel(Settings.commandPlayer))
             .then(argument("player", word())
-                .suggests( (c, b) -> CommandSource.suggestMatching(getPlayers(c.getSource()), b))
+                .suggests((c, b) -> CommandSource.suggestMatching(getPlayers(c.getSource()), b))
                 .then(literal("stop").executes(PlayerCommand::stop))
                 .then(makeActionCommand("use", ActionType.USE))
                 .then(makeActionCommand("jump", ActionType.JUMP))
@@ -87,6 +88,11 @@ public class PlayerCommand {
                     .then(literal("left_pants_leg").executes(manipulation(ap -> ap.toggleModelPart(PlayerModelPart.LEFT_PANTS_LEG))))
                     .then(literal("right_pants_leg").executes(manipulation(ap -> ap.toggleModelPart(PlayerModelPart.RIGHT_PANTS_LEG))))
                     .then(literal("hat").executes(manipulation(ap -> ap.toggleModelPart(PlayerModelPart.HAT))))
+                ).then(literal("gamemode")
+                    .then(literal("spectator").requires(s -> s.hasPermissionLevel(Settings.commandCameramode) || s.hasPermissionLevel(2)).executes(ctx -> changeGameMode(ctx, GameMode.SPECTATOR)))
+                    .then(literal("creative").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> changeGameMode(ctx, GameMode.CREATIVE)))
+                    .then(literal("survival").executes(ctx -> changeGameMode(ctx, GameMode.SURVIVAL)))
+                    .then(literal("adventure").executes(ctx -> changeGameMode(ctx, GameMode.ADVENTURE)))
                 ).then(literal("look")
                     .then(literal("north").executes(manipulation(ap -> ap.look(Direction.NORTH))))
                     .then(literal("south").executes(manipulation(ap -> ap.look(Direction.SOUTH))))
@@ -122,18 +128,27 @@ public class PlayerCommand {
                                     .then(literal("survival").executes(ctx -> spawn(ctx, GameMode.SURVIVAL)))
                                     .then(literal("adventure").executes(ctx -> spawn(ctx, GameMode.ADVENTURE)))
             )))))))));
-        dispatcher.register(literalargumentbuilder);
+        dispatcher.register(player);
     }
 
     private static LiteralArgumentBuilder<ServerCommandSource> makeActionCommand(String actionName, ActionType type) {
+        var once = literal("once").executes(c -> action(c, type, Action.once()));
+        var continuous = literal("continuous").executes(c -> action(c, type, Action.continuous()));
+        var interval = literal("inteval")
+            .then(argument("ticks", integer(2))
+                .executes(c -> action(c, type, Action.interval(getInteger(c, "ticks"), -1)))
+                .then(argument("count", integer(1))
+                    .executes(c -> action(c, type, Action.interval(getInteger(c, "ticks"), getInteger(c, "count"))))
+                )
+            );
+        var perTick = literal("perTick").then(argument("times", integer(1,10))
+                .executes(c -> action(c, type, Action.perTick(getInteger(c, "times")))));
         return literal(actionName)
             .executes(c -> action(c, type, Action.once()))
-            .then(literal("once").executes(c -> action(c, type, Action.once())))
-            .then(literal("continuous").executes(c -> action(c, type, Action.continuous())))
-            .then(literal("interval").then(argument("ticks", integer(2))
-                    .executes(c -> action(c, type, Action.interval(getInteger(c, "ticks"))))))
-            .then(literal("perTick").then(argument("times", integer(1,10))
-                    .executes(c -> action(c, type, Action.perTick(getInteger(c, "times"))))));
+            .then(once)
+            .then(continuous)
+            .then(interval)
+            .then(perTick);
     }
 
     private static Collection<String> getPlayers(ServerCommandSource source) {
@@ -151,7 +166,7 @@ public class PlayerCommand {
     private static boolean cantManipulate(CommandContext<ServerCommandSource> context) {
         PlayerEntity player = getPlayer(context);
         if (player == null) {
-            m(context.getSource(), ts("command.player.onlyExisting", Formatting.RED));
+            m(context.getSource(), ONLY_EXISTING);
             return true;
         }
         PlayerEntity sendingPlayer;
@@ -163,7 +178,7 @@ public class PlayerCommand {
 
         if (!context.getSource().getServer().getPlayerManager().isOperator(sendingPlayer.getGameProfile())) {
             if (sendingPlayer != player && !(player instanceof FakeServerPlayerEntity)) {
-                m(context.getSource(), ts("command.player.notOperator", Formatting.RED));
+                m(context.getSource(), NOT_OPERATOR);
                 return true;
             }
         }
@@ -174,7 +189,7 @@ public class PlayerCommand {
         if (cantManipulate(context)) return true;
         PlayerEntity player = getPlayer(context);
         if (player instanceof FakeServerPlayerEntity) return false;
-        m(context.getSource(), ts("command.player.notFake", Formatting.RED));
+        m(context.getSource(), NOT_FAKE);
         return true;
     }
 
@@ -184,21 +199,22 @@ public class PlayerCommand {
         PlayerManager manager = server.getPlayerManager();
         PlayerEntity player = manager.getPlayer(playerName);
         if (player != null) {
-            m(context.getSource(), ts("command.player.alreadyOnline", Formatting.RED, s(playerName, Formatting.BOLD)));
+            m(context.getSource(), ts(Keys.ALREADY_ONLINE, Formatting.RED, s(playerName, Formatting.BOLD)));
             return CompletableFuture.completedFuture(null);
         }
-        return CompletableFuture.supplyAsync(() -> server.getUserCache().findByName(playerName), Util.getIoWorkerExecutor()).thenApply(optProfile -> {
-            if (optProfile.isEmpty()) {
-                m(context.getSource(), ts("command.player.doesNotExist", Formatting.RED, s(playerName, Formatting.BOLD)));
+        CompletableFuture<GameProfile> future = new CompletableFuture<>();
+        server.getUserCache().findByNameAsync(playerName, opt -> future.complete(opt.orElse(null)));
+        return future.thenApply(profile -> {
+            if (profile == null) {
+                m(context.getSource(), ts(Keys.DOES_NOT_EXIST, Formatting.RED, s(playerName, Formatting.BOLD)));
                 return null;
             }
-            GameProfile profile = optProfile.get();
             if (manager.getUserBanList().contains(profile)) {
-                m(context.getSource(), ts("command.player.banned", Formatting.RED, s(playerName, Formatting.BOLD)));
+                m(context.getSource(), ts(Keys.BANNED, Formatting.RED, s(playerName, Formatting.BOLD)));
                 return null;
             }
             if (manager.isWhitelistEnabled() && manager.isWhitelisted(profile) && !context.getSource().hasPermissionLevel(2)) {
-                m(context.getSource(), ts("command.player.whitelisted", Formatting.RED));
+                m(context.getSource(), ts(Keys.WHITELISTED, Formatting.RED));
                 return null;
             }
             return profile;
@@ -269,14 +285,14 @@ public class PlayerCommand {
     private static int stop(CommandContext<ServerCommandSource> context) {
         if (cantManipulate(context)) return 0;
         ServerPlayerEntity player = getPlayer(context);
-        ((ActionPackOwner) player).getActionPack().stop();
+        ((ActionPackOwner) player).quickcarpet$getActionPack().stop();
         return 1;
     }
 
     private static int reach(CommandContext<ServerCommandSource> context, float dist) {
         if (cantManipulate(context)) return 0;
         ServerPlayerEntity player = getPlayer(context);
-        ((ActionPackOwner) player).getActionPack().reach = dist;
+        ((ActionPackOwner) player).quickcarpet$getActionPack().reach = dist;
         return 1;
     }
 
@@ -288,7 +304,7 @@ public class PlayerCommand {
     private static int manipulate(CommandContext<ServerCommandSource> context, PlayerAction action) throws CommandSyntaxException {
         if (cantManipulate(context)) return 0;
         ServerPlayerEntity player = getPlayer(context);
-        action.doAction(((ActionPackOwner) player).getActionPack());
+        action.doAction(((ActionPackOwner) player).quickcarpet$getActionPack());
         return 1;
     }
 
@@ -304,7 +320,7 @@ public class PlayerCommand {
         if (cantManipulate(context)) return 0;
         ServerPlayerEntity player = getPlayer(context);
         if (player instanceof FakeServerPlayerEntity) {
-            m(context.getSource(), ts("command.player.shadowFake", Formatting.RED));
+            m(context.getSource(), SHADOW_FAKE);
             return 0;
         }
         FakeServerPlayerEntity.createShadow(player.server, player);
@@ -319,6 +335,13 @@ public class PlayerCommand {
             player.dropItem(player.getInventory().getStack(i), true);
         }
         player.getInventory().clear();
+        return 1;
+    }
+
+    private static int changeGameMode(CommandContext<ServerCommandSource> context, GameMode mode) {
+        if (cantManipulate(context)) return 0;
+        ServerPlayerEntity player = getPlayer(context);
+        player.interactionManager.changeGameMode(mode);
         return 1;
     }
 }

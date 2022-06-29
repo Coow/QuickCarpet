@@ -1,5 +1,6 @@
 package quickcarpet.network.channels;
 
+import com.mojang.logging.LogUtils;
 import io.netty.buffer.Unpooled;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
@@ -11,19 +12,22 @@ import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.packet.c2s.play.CustomPayloadC2SPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.structure.StructureContext;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.ChunkPos;
+import net.minecraft.util.registry.Registry;
 import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.gen.feature.ConfiguredStructureFeature;
 import net.minecraft.world.gen.feature.StructureFeature;
 import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.slf4j.Logger;
 import quickcarpet.api.network.server.ServerPluginChannelHandler;
 import quickcarpet.network.impl.PacketSplitter;
 
 import java.util.*;
 
 public class StructureChannel implements ServerPluginChannelHandler {
-    private static final Logger LOGGER = LogManager.getLogger();
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static final int RESEND_TIMEOUT = 30 * 20;
     public static final Identifier CHANNEL = new Identifier("carpet:structures");
     public static final int VERSION = 1;
@@ -52,7 +56,7 @@ public class StructureChannel implements ServerPluginChannelHandler {
         playerMap.put(player, new Object2IntOpenHashMap<>());
         int viewDistance = player.getServer().getPlayerManager().getViewDistance();
         ChunkPos playerPos = player.getWatchedSection().toChunkPos();
-        ServerWorld world = player.getServerWorld();
+        ServerWorld world = player.getWorld();
         for (int x = playerPos.x - viewDistance; x <= playerPos.x + viewDistance; x++) {
             for (int z = playerPos.z - viewDistance; z <= playerPos.z + viewDistance; z++) {
                 if (!world.isChunkLoaded(x, z)) continue;
@@ -90,13 +94,14 @@ public class StructureChannel implements ServerPluginChannelHandler {
     }
 
     private void sendUpdate(ServerPlayerEntity player, Collection<ChunkPos> chunks) {
-        ServerWorld world = player.getServerWorld();
-        Map<String, LongSet> references = new HashMap<>();
+        ServerWorld world = player.getWorld();
+        Map<Identifier, LongSet> references = new HashMap<>();
+        var registry = world.getRegistryManager().get(Registry.CONFIGURED_STRUCTURE_FEATURE_KEY);
         for (ChunkPos pos : chunks) {
             if (!world.isChunkLoaded(pos.x, pos.z)) continue;
             Chunk chunk = world.getChunk(pos.x, pos.z);
-            for (Map.Entry<StructureFeature<?>, LongSet> e : chunk.getStructureReferences().entrySet()) {
-                references.merge(e.getKey().getName(), e.getValue(), (a, b) -> {
+            for (Map.Entry<ConfiguredStructureFeature<?, ?>, LongSet> e : chunk.getStructureReferences().entrySet()) {
+                references.merge(registry.getId(e.getKey()), e.getValue(), (a, b) -> {
                     LongSet c = new LongOpenHashSet(a);
                     c.addAll(b);
                     return c;
@@ -105,12 +110,12 @@ public class StructureChannel implements ServerPluginChannelHandler {
         }
         NbtList starts = new NbtList();
         Object2IntMap<ChunkPos> chunkMap = playerMap.get(player);
-        for (Map.Entry<String, LongSet> ref : references.entrySet()) {
+        for (Map.Entry<Identifier, LongSet> ref : references.entrySet()) {
             for (long pos : ref.getValue()) {
                 ChunkPos chunkPos = new ChunkPos(pos);
                 if (chunkMap.computeIntIfAbsent(chunkPos, c -> 1) > 1) continue;
                 Chunk chunk = world.getChunk(chunkPos.x, chunkPos.z);
-                starts.add(chunk.getStructureStart(StructureFeature.STRUCTURES.get(ref.getKey())).toNbt(world, chunkPos));
+                starts.add(chunk.getStructureStart(registry.get(ref.getKey())).toNbt(StructureContext.from(world), chunkPos));
             }
         }
         NbtCompound data = new NbtCompound();
@@ -122,7 +127,6 @@ public class StructureChannel implements ServerPluginChannelHandler {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeVarInt(PACKET_S2C_DATA);
         buf.writeNbt(data);
-        // LOGGER.info(data);
         PacketSplitter.send(player.networkHandler, CHANNEL, buf);
     }
 

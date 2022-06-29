@@ -4,6 +4,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerChunkManager;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.profiler.Profiler;
+import net.minecraft.util.registry.RegistryEntry;
 import net.minecraft.util.registry.RegistryKey;
 import net.minecraft.world.MutableWorldProperties;
 import net.minecraft.world.World;
@@ -14,7 +15,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import quickcarpet.helper.TickSpeed;
+import quickcarpet.feature.TickSpeed;
 
 import java.util.List;
 import java.util.function.BooleanSupplier;
@@ -24,17 +25,17 @@ import java.util.function.Supplier;
 public abstract class ServerWorldMixin extends World {
     @Shadow @Final List<ServerPlayerEntity> players;
 
-    @Shadow public abstract ServerChunkManager getChunkManager();
-
-    protected ServerWorldMixin(MutableWorldProperties properties, RegistryKey<World> registryKey, DimensionType dimensionType, Supplier<Profiler> supplier, boolean bl, boolean bl2, long l) {
-        super(properties, registryKey, dimensionType, supplier, bl, bl2, l);
+    protected ServerWorldMixin(MutableWorldProperties properties, RegistryKey<World> registryRef, RegistryEntry<DimensionType> registryEntry, Supplier<Profiler> profiler, boolean isClient, boolean debugWorld, long seed) {
+        super(properties, registryRef, registryEntry, profiler, isClient, debugWorld, seed);
     }
 
+    @Shadow public abstract ServerChunkManager getChunkManager();
+
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
-    private void tickFreeze(BooleanSupplier shouldContinueTicking, CallbackInfo ci) {
+    private void quickcarpet$tickFreeze(BooleanSupplier shouldContinueTicking, CallbackInfo ci) {
         if (TickSpeed.getServerTickSpeed().isPaused()) {
             for (ServerPlayerEntity p : this.players) p.tick();
-            this.getChunkManager().tick(shouldContinueTicking);
+            this.getChunkManager().tick(shouldContinueTicking, false);
             ci.cancel();
         }
     }

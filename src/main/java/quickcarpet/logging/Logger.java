@@ -8,35 +8,44 @@ import net.minecraft.text.LiteralText;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.Lazy;
+import org.jetbrains.annotations.VisibleForTesting;
 import quickcarpet.QuickCarpetServer;
+import quickcarpet.logging.source.LoggerSource;
+import quickcarpet.utils.QuickCarpetIdentifier;
+import quickcarpet.utils.QuickCarpetRegistries;
 
 import javax.annotation.Nullable;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.function.BiConsumer;
 import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 public class Logger implements Comparable<Logger> {
-    public static Codec<Logger> NAME_CODEC = Codec.STRING.comapFlatMap(Loggers::getDataResult, Logger::getName).stable();
+    public static Codec<Logger> NAME_CODEC = QuickCarpetIdentifier.CODEC.comapFlatMap(Loggers::getDataResult, Logger::getId).stable();
 
     boolean active = false;
-    private @Nullable Text unavailable;
+    private @Nullable BiConsumer<MutableText, Collection<LogParameter>> testListener;
 
-    private final String name;
-    private final MutableText displayName;
-    private final String[] options;
-    private final String defaultOption;
-    final LogHandler defaultHandler;
 
-    public Logger(String name, String def, String[] options, LogHandler defaultHandler) {
-        this.name = name;
-        this.displayName = new LiteralText(name);
-        displayName.setStyle(displayName.getStyle().withColor(Formatting.GOLD));
+    private final @Nullable String[] options;
+    private final @Nullable String defaultOption;
+    final @Nullable LogHandler defaultHandler;
+    private @Nullable Supplier<MutableText> unavailabilityReason;
+    private @Nullable Supplier<LoggerSource> sourceCreator;
+
+    public Logger(
+        @Nullable String def,
+        @Nullable String[] options,
+        @Nullable LogHandler defaultHandler,
+        @Nullable Supplier<MutableText> unavailabilityReason,
+        @Nullable Supplier<LoggerSource> source
+    ) {
         this.defaultOption = def;
         this.options = options == null ? new String[0] : options;
         this.defaultHandler = defaultHandler;
+        this.unavailabilityReason = unavailabilityReason;
+        this.sourceCreator = source;
     }
 
     public String getDefault() {
@@ -47,13 +56,13 @@ public class Logger implements Comparable<Logger> {
         return options;
     }
 
-    public String getName() {
-        return name;
+    public Identifier getId() {
+        return QuickCarpetRegistries.LOGGER.getId(this);
     }
 
     @Override
     public int compareTo(Logger o) {
-        return name.compareTo(o.name);
+        return getId().compareTo(o.getId());
     }
 
     public boolean isActive() {
@@ -61,24 +70,29 @@ public class Logger implements Comparable<Logger> {
     }
 
     public Text getDisplayName() {
-        return displayName;
+        return new LiteralText(QuickCarpetIdentifier.toString(getId())).formatted(Formatting.GOLD);
+    }
+
+    @Nullable
+    public LoggerSource createSource() {
+        return this.sourceCreator == null ? null : this.sourceCreator.get();
     }
 
     public void setAvailable() {
-        this.unavailable = null;
+        this.unavailabilityReason = null;
     }
 
     public void setUnavailable(MutableText reason) {
-        this.unavailable = reason;
+        this.unavailabilityReason = reason::shallowCopy;
     }
 
     public boolean isAvailable() {
-        return this.unavailable == null;
+        return getUnavailabilityReason() == null;
     }
 
     @Nullable
     public MutableText getUnavailabilityReason() {
-        return isAvailable() ? null : unavailable.copy();
+        return this.unavailabilityReason != null ? this.unavailabilityReason.get() : null;
     }
 
     /**
@@ -95,9 +109,7 @@ public class Logger implements Comparable<Logger> {
     }
 
     public void log(MessageSupplier message, Supplier<Collection<LogParameter>> commandParams) {
-        getOnlineSubscribers().forEach(player -> {
-            sendMessage(player, message.get(getOption(player), player), commandParams);
-        });
+        forEachSubscription((player, option) -> sendMessage(player, message.get(option, player), commandParams));
     }
 
     /**
@@ -118,7 +130,8 @@ public class Logger implements Comparable<Logger> {
 
     public void log(PlayerIndependentMessageSupplier message, Supplier<Collection<LogParameter>>  commandParams) {
         Map<String, MutableText> messages = new HashMap<>();
-        getOnlineSubscribers().forEach(player -> sendMessage(player, messages.computeIfAbsent(getOption(player), message::get), commandParams));
+        forEachSubscription((player, option) -> sendMessage(player, messages.computeIfAbsent(option, message::get), commandParams));
+        if (testListener != null) testListener.accept(messages.computeIfAbsent(getDefault(), message::get), commandParams.get());
     }
 
     public void log(Supplier<MutableText> message) {
@@ -127,7 +140,8 @@ public class Logger implements Comparable<Logger> {
 
     public void log(Supplier<MutableText> message, Supplier<Collection<LogParameter>>  commandParams) {
         Lazy<MutableText> messages = new Lazy<>(message);
-        getOnlineSubscribers().forEach(player -> sendMessage(player, messages.get(), commandParams));
+        forEachSubscription((player, option) -> sendMessage(player, messages.get(), commandParams));
+        if (testListener != null) testListener.accept(messages.get(), commandParams.get());
     }
 
     private static LoggerManager getManager() {
@@ -135,18 +149,21 @@ public class Logger implements Comparable<Logger> {
         return server == null ? null : server.loggers;
     }
 
-    private String getOption(ServerPlayerEntity player) {
-        return getManager().getPlayerSubscriptions(player.getEntityName()).getOption(this);
+    private void forEachSubscription(BiConsumer<ServerPlayerEntity, String> action) {
+        LoggerManager manager = getManager();
+        if (manager == null) return;
+        LoggerSource source = manager.getSource(this);
+        manager.getOnlineSubscribers(this).forEachOrdered(player -> {
+            String optionString = manager.getPlayerSubscriptions(player.getEntityName()).getOption(this);
+            List<String> options = source == null || optionString == null ? Collections.singletonList(optionString) : source.parseOptions(optionString);
+            for (String option : options) {
+                action.accept(player, option);
+            }
+        });
     }
 
     private LogHandler getHandler(ServerPlayerEntity player) {
         return getManager().getPlayerSubscriptions(player.getEntityName()).getHandler(this);
-    }
-
-    private Stream<ServerPlayerEntity> getOnlineSubscribers() {
-        LoggerManager manager = getManager();
-        if (manager == null) return Stream.empty();
-        return manager.getOnlineSubscribers(this);
     }
 
     private void sendMessage(ServerPlayerEntity player, MutableText message, Supplier<Collection<LogParameter>> commandParams) {
@@ -157,5 +174,62 @@ public class Logger implements Comparable<Logger> {
             return builder.build();
         };
         getHandler(player).handle(this, player, message, params);
+    }
+
+    @VisibleForTesting
+    public Runnable test(BiConsumer<MutableText, Map<String, Object>> listener) {
+        boolean activeBefore = active;
+        active = true;
+        testListener = (msg, params) -> {
+            Map<String, Object> paramMap = new LinkedHashMap<>();
+            if (params != null) for (LogParameter param : params) paramMap.put(param.key(), param.getValue());
+            listener.accept(msg, paramMap);
+        };
+        return () -> {
+            testListener = null;
+            active = activeBefore;
+        };
+    }
+
+    public static class Builder {
+        private LogHandler defaultHandler;
+        private List<String> options;
+        private String defaultOption;
+        private Supplier<MutableText> unavailabilityReason;
+        private Supplier<LoggerSource> source;
+
+        public Builder withDefaultHandler(LogHandler handler) {
+            this.defaultHandler = handler;
+            return this;
+        }
+
+        public Builder withOptions(List<String> options) {
+            this.options = options;
+            this.defaultOption = options.get(0);
+            return this;
+        }
+
+        public Builder withOptions(String ...options) {
+            return withOptions(Arrays.asList(options));
+        }
+
+        public Builder withDefaultOption(String option) {
+            this.defaultOption = option;
+            return this;
+        }
+
+        public Builder withUnavailabilityReason(Supplier<MutableText> reason) {
+            this.unavailabilityReason = reason;
+            return this;
+        }
+
+        public Builder withSource(Supplier<LoggerSource> source) {
+            this.source = source;
+            return this;
+        }
+
+        public Logger build() {
+            return new Logger(defaultOption, options == null ? null : options.toArray(new String[0]), defaultHandler, unavailabilityReason, source);
+        }
     }
 }

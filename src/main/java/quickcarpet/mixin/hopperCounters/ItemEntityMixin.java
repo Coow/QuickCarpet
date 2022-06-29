@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import quickcarpet.QuickCarpetServer;
-import quickcarpet.helper.HopperCounter;
+import quickcarpet.feature.HopperCounter;
 import quickcarpet.settings.Settings;
 
 @Mixin(ItemEntity.class)
@@ -24,7 +24,7 @@ public abstract class ItemEntityMixin extends Entity {
     }
 
     @Inject(method = "damage", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/ItemEntity;discard()V"))
-    private void countCactus(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
+    private void quickcarpet$hopperCounters$countCactus(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
         if (!world.isClient() && Settings.hopperCounters && source == DamageSource.CACTUS) {
             HopperCounter.getCounter(HopperCounter.Key.CACTUS).add(QuickCarpetServer.getMinecraftServer(), getStack());
         }

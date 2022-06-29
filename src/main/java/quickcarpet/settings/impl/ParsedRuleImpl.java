@@ -5,17 +5,19 @@ import com.mojang.brigadier.arguments.*;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.text.Text;
 import net.minecraft.text.TranslatableText;
 import quickcarpet.api.module.QuickCarpetModule;
 import quickcarpet.api.settings.*;
 import quickcarpet.network.channels.RulesChannel;
 import quickcarpet.settings.Settings;
 import quickcarpet.utils.Messenger;
-import quickcarpet.utils.MixinConfig;
 import quickcarpet.utils.Reflection;
 import quickcarpet.utils.Translations;
 
 import javax.annotation.Nullable;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.function.Function;
@@ -25,7 +27,7 @@ import static java.lang.reflect.Modifier.*;
 
 final class ParsedRuleImpl<T> implements Comparable<ParsedRule<T>>, ParsedRule<T> {
     private final Rule rule;
-    private final Field field;
+    private final FieldAccessor<T> fieldAccessor;
 
     private final String shortName;
     private final String name;
@@ -34,7 +36,7 @@ final class ParsedRuleImpl<T> implements Comparable<ParsedRule<T>>, ParsedRule<T
     private final TranslatableText extraInfo;
     @Nullable
     private final TranslatableText deprecated;
-    private final ImmutableList<RuleCategory> categories;
+    private final List<RuleCategory> categories;
     private final List<String> options;
     private final List<String> enabledOptions;
     private final Class<T> type;
@@ -50,38 +52,127 @@ final class ParsedRuleImpl<T> implements Comparable<ParsedRule<T>>, ParsedRule<T
 
     @SuppressWarnings("unchecked")
     ParsedRuleImpl(SettingsManager manager, Field field, Rule rule) {
-        if (((field.getModifiers() & (PUBLIC | STATIC | FINAL)) != (PUBLIC | STATIC))) {
+        this(
+            manager,
+            SettingsManager.getDefaultRuleName(field.getName(), rule),
+            makeFieldAccessor(field),
+            Arrays.asList(rule.category()),
+            Arrays.asList(rule.options()),
+            Reflection.callDeprecatedPrivateConstructor(rule.validator()),
+            Reflection.callDeprecatedPrivateConstructor(rule.onChange()),
+            rule.deprecated(),
+            rule
+        );
+    }
+
+    private static VarHandle getVarHandle(Field field) {
+        try {
+            return MethodHandles.lookup().unreflectVarHandle(field);
+        } catch (IllegalAccessException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+
+    private static <T> VarHandleFieldAccessor<T> makeFieldAccessor(Field field) {
+        int fieldAccess = field.getModifiers();
+        if (((fieldAccess & (PUBLIC | STATIC | FINAL)) != (PUBLIC | STATIC))) {
             throw new IllegalArgumentException(field + " is not public static");
         }
+        return (fieldAccess & VOLATILE) != 0
+            ? new VolatileVarHandleFieldAccessor<>(getVarHandle(field))
+            : new VarHandleFieldAccessor<>(getVarHandle(field));
+    }
+
+    static class VarHandleFieldAccessor<T> implements FieldAccessor<T> {
+        protected final VarHandle varHandle;
+
+        VarHandleFieldAccessor(VarHandle varHandle) {
+            if (!varHandle.coordinateTypes().isEmpty()) {
+                throw new IllegalArgumentException("VarHandle must not require coordinates");
+            }
+            this.varHandle = varHandle;
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public Class<T> getType() {
+            return (Class<T>) varHandle.varType();
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public T get() {
+            return (T) varHandle.get();
+        }
+
+        @Override
+        public void set(T value) {
+            varHandle.set(value);
+        }
+    }
+
+    static class VolatileVarHandleFieldAccessor<T> extends VarHandleFieldAccessor<T> {
+        VolatileVarHandleFieldAccessor(VarHandle varHandle) {
+            super(varHandle);
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public T get() {
+            return (T) varHandle.getVolatile();
+        }
+
+        @Override
+        public void set(T value) {
+            varHandle.setVolatile(value);
+        }
+    }
+
+    ParsedRuleImpl(SettingsManager manager, String name, FieldAccessor<T> field, List<RuleCategory> categories, List<String> options, @Nullable Validator<T> validator, @Nullable ChangeListener<T> onChange, boolean deprecated) {
+        this(
+            manager,
+            name,
+            field,
+            categories,
+            options,
+            validator,
+            onChange,
+            deprecated,
+            null
+        );
+    }
+
+    private ParsedRuleImpl(SettingsManager manager, String name, FieldAccessor<T> fieldAccessor, List<RuleCategory> categories, List<String> staticOptions, @Nullable Validator<T> validator, @Nullable ChangeListener<T> onChange, boolean deprecated, @Nullable Rule rule) {
         this.manager = manager;
         this.rule = rule;
-        this.field = field;
-        this.shortName = SettingsManager.getDefaultRuleName(field, rule);
-        this.name = manager.getRuleName(field, rule);
-        this.type = (Class<T>) field.getType();
-        this.description = new TranslatableText(manager.getDescriptionTranslationKey(field, rule));
-        String extraKey = manager.getExtraTranslationKey(field, rule);
+        this.fieldAccessor = fieldAccessor;
+        this.shortName = name;
+        this.name = manager.getRuleName(name, rule);
+        this.type = fieldAccessor.getType();
+        this.description = new TranslatableText(manager.getDescriptionTranslationKey(name, rule));
+        String extraKey = manager.getExtraTranslationKey(name, rule);
         this.extraInfo = Translations.hasTranslation(extraKey) ? new TranslatableText(extraKey) : null;
-        this.categories = ImmutableList.copyOf(rule.category());
-        this.validator = (Validator<T>) Reflection.callDeprecatedPrivateConstructor(rule.validator());
-        this.onChange = (ChangeListener<T>) Reflection.callDeprecatedPrivateConstructor(rule.onChange());
+        this.categories = ImmutableList.copyOf(categories);
+        this.validator = validator == null ? v -> Optional.empty() : validator;
+        this.onChange = onChange == null ? (r, p) -> {} : onChange;
         this.typeAdapter = getTypeAdapter(this.type);
         this.defaultValue = get();
         this.defaultAsString = typeAdapter.toString(this.defaultValue);
-        boolean disabled = !MixinConfig.getInstance().isRuleEnabled(this);
         List<String> options = typeAdapter.getOptions();
-        if (options == null) options = ImmutableList.copyOf(rule.options());
+        if (options == null) options = ImmutableList.copyOf(staticOptions);
         this.options = options;
-        if (!disabled) {
-            this.enabledOptions = options.stream()
-                .filter(option -> MixinConfig.getInstance().isOptionEnabled(this, option))
-                .toList();
-            if (!options.isEmpty() && enabledOptions.size() <= 1) disabled = true;
-        } else {
-            this.enabledOptions = ImmutableList.of(defaultAsString);
-        }
-        this.disabled = disabled;
-        this.deprecated = rule.deprecated() ? new TranslatableText(manager.getDeprecationTranslationKey(field, rule)) : null;
+        boolean disabled = !isEnabled(this);
+        this.enabledOptions = getEnabledOptions(this, options, disabled);
+        this.disabled = disabled || (!options.isEmpty() && enabledOptions.size() <= 1);
+        this.deprecated = deprecated ? new TranslatableText(manager.getDeprecationTranslationKey(name, rule)) : null;
+    }
+
+    private static boolean isEnabled(ParsedRuleImpl<?> rule) {
+        return ((SettingsManager) rule.manager).source.isRuleEnabled(rule);
+    }
+
+    private static List<String> getEnabledOptions(ParsedRuleImpl<?> rule, List<String> options, boolean disabled) {
+        return disabled ? List.of(rule.getDefaultAsString()) : ((SettingsManager) rule.manager).source.getEnabledOptions(rule, options);
     }
 
     @Override
@@ -90,8 +181,8 @@ final class ParsedRuleImpl<T> implements Comparable<ParsedRule<T>>, ParsedRule<T
     }
 
     @Override
-    public Field getField() {
-        return field;
+    public FieldAccessor<T> getFieldAccessor() {
+        return fieldAccessor;
     }
 
     @Override
@@ -184,8 +275,7 @@ final class ParsedRuleImpl<T> implements Comparable<ParsedRule<T>>, ParsedRule<T
     @Override
     @Nullable
     public QuickCarpetModule getModule() {
-        if (!(manager instanceof ModuleSettingsManager)) return null;
-        return ((ModuleSettingsManager) manager).module;
+        return manager instanceof ModuleSettingsManager moduleManager ? moduleManager.getModule() : null;
     }
 
     @Override
@@ -201,7 +291,7 @@ final class ParsedRuleImpl<T> implements Comparable<ParsedRule<T>>, ParsedRule<T
     @Override
     public void set(T value, boolean sync) {
         T previousValue = this.get();
-        Optional<TranslatableText> error = this.validator.validate(value);
+        Optional<Text> error = this.validator.validate(value);
         if (error.isPresent()) throw new ParsedRule.ValueException(error.get());
         if (sync) {
             String str = typeAdapter.toString(value);
@@ -209,25 +299,16 @@ final class ParsedRuleImpl<T> implements Comparable<ParsedRule<T>>, ParsedRule<T
                 throw new ParsedRule.ValueException(Messenger.t(""));
             }
         }
-        try {
-            this.field.set(null, value);
-            this.onChange.onChange(this, previousValue);
-            //noinspection unchecked
-            this.categories.forEach(c -> c.onChange((ParsedRuleImpl<Object>) this, previousValue));
-            if (sync) RulesChannel.instance.sendRuleUpdate(Collections.singleton(this));
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException(e);
-        }
+        this.fieldAccessor.set(value);
+        this.onChange.onChange(this, previousValue);
+        //noinspection unchecked
+        this.categories.forEach(c -> c.onChange((ParsedRuleImpl<Object>) this, previousValue));
+        if (sync) RulesChannel.instance.sendRuleUpdate(Collections.singleton(this));
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public T get() {
-        try {
-            return (T) this.field.get(null);
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException(e);
-        }
+        return this.fieldAccessor.get();
     }
 
     @Override
@@ -375,7 +456,7 @@ final class ParsedRuleImpl<T> implements Comparable<ParsedRule<T>>, ParsedRule<T
         TypeAdapter.Simple<Boolean> BOOLEAN = new Simple<>(Boolean::parseBoolean, BoolArgumentType::bool) {
             @Override
             public List<String> getOptions() {
-                return ImmutableList.of("true", "false");
+                return List.of("true", "false");
             }
         };
         TypeAdapter.Simple<Integer> INTEGER = new Simple<>(Integer::parseInt, IntegerArgumentType::integer);
